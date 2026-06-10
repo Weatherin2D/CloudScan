@@ -89,6 +89,21 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api\/openradar/, ""),
       },
+      "/api/ifrc-alerts": {
+        target: "https://alerthub-api.ifrc.org",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/ifrc-alerts/, "/graphql"),
+      },
+      "/api/mesocast": {
+        target: "https://mesocast.uk",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/mesocast/, ""),
+      },
+      "/api/open-meteo": {
+        target: "https://api.open-meteo.com",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/open-meteo/, ""),
+      },
     },
   },
   preview: {

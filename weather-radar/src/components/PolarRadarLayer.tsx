@@ -32,6 +32,7 @@ export default function PolarRadarLayer<T extends PolarFrame>({
   const cacheRef = useRef(
     new Map<string, { dataUrl: string; bounds: L.LatLngBoundsExpression }>(),
   );
+  const loadingRef = useRef(new Set<string>());
   const [cacheRev, bumpCache] = useState(0);
 
   const activeId = frames[frameIndex]?.id ?? null;
@@ -39,6 +40,7 @@ export default function PolarRadarLayer<T extends PolarFrame>({
   useEffect(() => {
     stopsRef.current = stops;
     cacheRef.current.clear();
+    loadingRef.current.clear();
     overlaysRef.current.forEach((ov) => ov.remove());
     overlaysRef.current.clear();
     bumpCache((n) => n + 1);
@@ -47,26 +49,33 @@ export default function PolarRadarLayer<T extends PolarFrame>({
   useEffect(() => {
     if (!frames.length) return;
 
-    const preload = new Set<string>();
-    for (let d = -2; d <= 2; d++) {
-      const i = (frameIndex + d + frames.length) % frames.length;
-      const f = frames[i];
-      if (f) preload.add(f.id);
-    }
-
-    preload.forEach((id) => {
-      if (cacheRef.current.has(id)) return;
+    const queueFrame = (id: string) => {
+      if (cacheRef.current.has(id) || loadingRef.current.has(id)) return;
       const frame = frames.find((f) => f.id === id);
       if (!frame) return;
+      loadingRef.current.add(id);
       loadFrame(frame)
         .then((result) => {
-          if (!result) return;
-          cacheRef.current.set(id, result);
-          bumpCache((n) => n + 1);
+          if (result) {
+            cacheRef.current.set(id, result);
+            bumpCache((n) => n + 1);
+          }
         })
-        .catch(() => {});
-    });
-  }, [frames, frameIndex, loadFrame]);
+        .catch(() => {})
+        .finally(() => {
+          loadingRef.current.delete(id);
+        });
+    };
+
+    if (activeId) queueFrame(activeId);
+
+    for (let d = -1; d <= 1; d++) {
+      if (d === 0) continue;
+      const i = (frameIndex + d + frames.length) % frames.length;
+      const f = frames[i];
+      if (f) queueFrame(f.id);
+    }
+  }, [frames, frameIndex, loadFrame, activeId]);
 
   useEffect(() => {
     overlaysRef.current.forEach((ov, id) => {

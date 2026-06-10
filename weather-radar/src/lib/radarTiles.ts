@@ -25,3 +25,10 @@ export const IEM_RIDGE_TILE_OPTS: TileLayerOptions = {
   className: "radar-tile-raw",
   attribution: "IEM/NEXRAD",
 };
+
+/** Per-station overlay: load tiles during map fly/pan so the latest scan appears sooner. */
+export const STATION_IEM_TILE_OPTS: TileLayerOptions = {
+  ...IEM_RIDGE_TILE_OPTS,
+  updateWhenIdle: false,
+  keepBuffer: 4,
+};

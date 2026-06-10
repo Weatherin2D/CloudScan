@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { ColorStop } from "@/lib/palPalette";
+import type { ColorStop, ReflectivityFadeSettings } from "@/lib/palPalette";
 import { parseLevel3 } from "@/lib/level3Parse";
 import { level3ObjectUrl, type Level3Frame } from "@/lib/level3Radar";
 import { renderLevel3Radial } from "@/lib/renderPolar";
@@ -10,9 +10,18 @@ interface Props {
   frameIndex: number;
   opacity: number;
   stops: ColorStop[];
+  reflectivity?: boolean;
+  reflectivityFade?: ReflectivityFadeSettings;
 }
 
-export default function Level3RadarLayer({ frames, frameIndex, opacity, stops }: Props) {
+export default function Level3RadarLayer({
+  frames,
+  frameIndex,
+  opacity,
+  stops,
+  reflectivity = false,
+  reflectivityFade,
+}: Props) {
   const loadFrame = useCallback(
     async (frame: Level3Frame & { id: string }) => {
       const res = await fetch(level3ObjectUrl(frame.key));
@@ -24,9 +33,12 @@ export default function Level3RadarLayer({ frames, frameIndex, opacity, stops }:
         parsed.latitude,
         parsed.longitude,
         stops,
+        1024,
+        reflectivity,
+        reflectivityFade,
       );
     },
-    [stops],
+    [stops, reflectivity, reflectivityFade],
   );
 
   const polarFrames = frames.map((f) => ({ ...f, id: f.key }));

@@ -83,5 +83,6 @@ export function isIemProductSupported(productId: string): boolean {
 export function isReflectivityProduct(productId: string): boolean {
   if (!productId) return false;
   const id = productId.toUpperCase();
-  return id === "N0Q" || id === "N0Z";
+  if (id === "N0Z" || id === "N0Q") return true;
+  return /^N\dB$/.test(id);
 }

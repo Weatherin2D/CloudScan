@@ -38,7 +38,12 @@ export function renderLevel3Radial(
   lon: number,
   stops: ColorStop[],
   size = 1024,
+  reflectivity = false,
+  fade: ReflectivityFadeSettings = DEFAULT_REFLECTIVITY_FADE,
 ): PolarRenderResult {
+  const sampleColor = reflectivity
+    ? (dbz: number, s: ColorStop[]) => colorAtReflectivityDbz(dbz, s, fade)
+    : colorAtDbz;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -68,7 +73,7 @@ export function renderLevel3Radial(
       minLon = Math.min(minLon, gateLon);
       maxLon = Math.max(maxLon, gateLon);
 
-      const [r, g, bl, a] = colorAtDbz(val, stops);
+      const [r, g, bl, a] = sampleColor(val, stops);
       if (a === 0) continue;
 
       const distPx = rangeKm * pxPerKm;

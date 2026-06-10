@@ -61,6 +61,31 @@ function digitalProduct(code, abbreviation, description) {
   return { code, abbreviation, description, productDescription: digitalProductDescription };
 }
 
+/** ICD layout for 256-level reflectivity/velocity products (153, 154, 94). */
+function leveledHalfwords30_53(data) {
+  const raf = new RandomAccessFile(data);
+  return {
+    elevationAngle: raf.readShort() / 10,
+    plot: {
+      minimumDataValue: raf.readShort() / 10,
+      dataIncrement: raf.readShort() / 10,
+      dataLevels: raf.readShort(),
+    },
+    dependent34_46: raf.read(26),
+    maxReflectivity: raf.readShort(),
+    dependent48_49: raf.read(4),
+    ...deltaTime(raf.readShort()),
+    compressionMethod: raf.readShort(),
+    uncompressedProductSize: (raf.readUShort() << 16) + raf.readUShort(),
+  };
+}
+
+const leveledProductDescription = { halfwords30_53: leveledHalfwords30_53 };
+
+function leveledProduct(code, abbreviation, description) {
+  return { code, abbreviation, description, productDescription: leveledProductDescription };
+}
+
 const productsRaw = [
   cjs(p56),
   cjs(p58),
@@ -89,6 +114,16 @@ const productsRaw = [
     163,
     ["NXK", "NYK", "NZK", "N0K", "NAK", "N1K", "NBK", "N2K", "N3K"],
     "Specific Differential Phase",
+  ),
+  leveledProduct(
+    153,
+    ["NXB", "NYB", "NZB", "N0B", "NAB", "N1B", "NBB", "N2B", "N3B"],
+    "Base Reflectivity",
+  ),
+  leveledProduct(
+    154,
+    ["NXG", "NYG", "NZG", "N0G", "NAG", "N1G", "NBG", "N2G", "N3G"],
+    "Base Radial Velocity",
   ),
 ];
 

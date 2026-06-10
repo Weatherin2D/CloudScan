@@ -1,36 +1,55 @@
-# [Project name]
+# CloudScan — Global Weather Radar Viewer
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+An interactive global weather radar viewer with NEXRAD/OPERA products, lightning tracking, composite imagery, and map drawing tools.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `PORT=5000 pnpm --filter @workspace/weather-radar run dev` — run the frontend dev server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL` — Postgres connection string (for future backend use)
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
+- pnpm workspaces, Node.js 20, TypeScript 5.9
+- Frontend: React 19 + Vite 7 + Tailwind CSS v4
+- Maps: Leaflet + React-Leaflet
+- API (backend): Express 5
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Build: esbuild (CJS bundle for API server)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `weather-radar/` — Main frontend React app (Vite, Tailwind, Leaflet)
+- `weather-radar/src/` — App source (pages, components, hooks, lib)
+- `artifacts/api-server/` — Express 5 backend (health check, future API)
+- `artifacts/mockup-sandbox/` — Vite component dev sandbox
+- `lib/db/` — Drizzle ORM schema and migrations
+- `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contracts)
+- `lib/api-client-react/` — Generated React Query hooks
+- `lib/api-zod/` — Generated Zod schemas
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- `weather-radar` package lives at root level; added explicitly to `pnpm-workspace.yaml` alongside `apps/*`, `artifacts/*`, `lib/*`
+- In dev, Vite proxies `/api/nexrad-l3`, `/api/meteogate`, `/api/openradar` to external S3/weather APIs to bypass CORS
+- Production static build deploys from `weather-radar/dist/public`
+- `PORT=5000` must be set when running the dev server (vite reads `process.env.PORT`)
+- `allowedHosts: true` and `host: "0.0.0.0"` are already configured in `vite.config.ts` for Replit proxy compatibility
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Global composite radar imagery (RainViewer)
+- NEXRAD Level-3 radar station viewer (US)
+- OPERA radar viewer (Europe)
+- Lightning strike tracking
+- Satellite imagery overlay
+- Map drawing tools
+- Animated radar playback with timeline controls
 
 ## User preferences
 
@@ -38,7 +57,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- `PORT=5000` env var must be passed — vite.config.ts reads it and throws if invalid
+- `weather-radar` is not under `apps/` on disk; it's at the workspace root and listed explicitly in `pnpm-workspace.yaml`
+- pnpm `minimumReleaseAge: 1440` is enforced — don't install packages published less than 1 day ago (except `@replit/*`)
 
 ## Pointers
 

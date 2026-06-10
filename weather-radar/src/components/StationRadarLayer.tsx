@@ -9,14 +9,17 @@ import {
   type StationRadarFrame,
 } from "@/lib/iemRadar";
 import { CanvasTileLayerClass, type CanvasTileLayer } from "@/lib/canvasTileLayer";
-import { IEM_RIDGE_TILE_OPTS } from "@/lib/radarTiles";
+import { STATION_IEM_TILE_OPTS } from "@/lib/radarTiles";
 
 export type StationRadarStatus = "idle" | "loading" | "ready" | "unsupported" | "unavailable";
+
+const LATEST_SCAN_FRAME: StationRadarFrame = { time: 0, tmsId: "0" };
 
 interface Props {
   station: RadarStation | null;
   product: string;
   frames: StationRadarFrame[];
+  framesLoading?: boolean;
   frameIndex: number;
   opacity: number;
   reflectivityLut?: Uint8ClampedArray | null;
@@ -26,6 +29,7 @@ export default function StationRadarLayer({
   station,
   product,
   frames,
+  framesLoading = false,
   frameIndex,
   opacity,
   reflectivityLut,
@@ -38,18 +42,29 @@ export default function StationRadarLayer({
   const useCustomReflectivity =
     isReflectivityProduct(product) && reflectivityLut != null;
 
+  const displayFrames = useMemo(() => {
+    if (frames.length > 0) return frames;
+    if (framesLoading && station?.id) return [LATEST_SCAN_FRAME];
+    return [];
+  }, [frames, framesLoading, station?.id]);
+
+  const safeFrameIndex = displayFrames.length > 0
+    ? Math.min(frameIndex, displayFrames.length - 1)
+    : 0;
+
   const preloadIds = useMemo(() => {
     const ids = new Set<string>();
-    if (!frames.length || !station?.id) return ids;
-    for (let d = -2; d <= 2; d++) {
-      const i = (frameIndex + d + frames.length) % frames.length;
-      const frame = frames[i];
-      if (frame) ids.add(frame.tmsId);
+    if (!displayFrames.length || !station?.id) return ids;
+    const active = displayFrames[safeFrameIndex];
+    if (active) ids.add(active.tmsId);
+    if (displayFrames.length > 1) {
+      const next = displayFrames[(safeFrameIndex + 1) % displayFrames.length];
+      if (next) ids.add(next.tmsId);
     }
     return ids;
-  }, [frames, frameIndex, station?.id]);
+  }, [displayFrames, safeFrameIndex, station?.id]);
 
-  const activeTmsId = frames[frameIndex]?.tmsId ?? null;
+  const activeTmsId = displayFrames[safeFrameIndex]?.tmsId ?? null;
 
   useEffect(() => {
     lutRef.current = reflectivityLut;
@@ -84,14 +99,14 @@ export default function StationRadarLayer({
 
       const layer = useCustomReflectivity
         ? new CanvasTileLayerClass(url, {
-            ...IEM_RIDGE_TILE_OPTS,
+            ...STATION_IEM_TILE_OPTS,
             opacity: 0,
             zIndex: 6,
             lut: lutRef.current ?? undefined,
             colorMode: "iem",
           })
         : L.tileLayer(url, {
-            ...IEM_RIDGE_TILE_OPTS,
+            ...STATION_IEM_TILE_OPTS,
             opacity: 0,
             zIndex: 6,
           });

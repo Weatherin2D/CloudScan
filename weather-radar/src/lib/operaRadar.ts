@@ -1,4 +1,5 @@
 import { OPERA_STATION_MAP } from "./operaStationMap";
+import { operaElevationForTilt } from "./radarTilt";
 import type { OdimScanMeta } from "./renderPolar";
 
 export const METEOGATE_BASE =
@@ -28,17 +29,20 @@ function toIsoRange(hours = 6): { start: string; end: string } {
 export async function fetchOperaFrames(
   stationId: string,
   standardName: "DBZH" | "VRADH",
+  tiltIndex = 0,
   maxFrames = 13,
 ): Promise<OperaFrame[]> {
   const meta = operaMetaForStation(stationId);
   if (!meta) return [];
 
-  const { start, end } = toIsoRange(6);
+  const targetEl = operaElevationForTilt(tiltIndex);
+
+  const { start, end } = toIsoRange(2.5);
   const dt = encodeURIComponent(`${start}/${end}`);
   const url =
     `${METEOGATE_BASE}/eu-eumetnet-weather-radar/collections/observations/locations/` +
     `${encodeURIComponent(meta.locationId)}?datetime=${dt}&standard_name=${standardName}` +
-    `&level=../5.0&format=ODIM&f=CoverageJSON`;
+    `&level=../10.0&format=ODIM&f=CoverageJSON`;
 
   const res = await fetch(url);
   if (!res.ok) return [];
@@ -47,7 +51,7 @@ export async function fetchOperaFrames(
   const odimLinks: string[] = [];
   for (const cov of json.coverages ?? []) {
     const level = cov.domain?.axes?.z?.values?.[0] as number | undefined;
-    if (level != null && level > 2.5) continue;
+    if (level != null && Math.abs(level - targetEl) > 0.45) continue;
     for (const l of cov.links ?? []) {
       if (l.href?.includes("openradar-24h") && l.href.includes(".h5")) {
         odimLinks.push(

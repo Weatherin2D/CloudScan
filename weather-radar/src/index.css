@@ -168,6 +168,33 @@
   border-top-color: #374151 !important;
 }
 
+.weather-risk-tooltip {
+  background: #111827 !important;
+  border: 1px solid #ea580c80 !important;
+  color: #f9fafb !important;
+  font-size: 12px !important;
+  padding: 4px 8px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6) !important;
+}
+.weather-risk-tooltip::before {
+  border-top-color: #ea580c80 !important;
+}
+
+.weather-alert-tooltip {
+  background: #111827 !important;
+  border: 1px solid #dc262680 !important;
+  color: #f9fafb !important;
+  font-size: 12px !important;
+  padding: 4px 8px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6) !important;
+  max-width: 260px;
+}
+.weather-alert-tooltip::before {
+  border-top-color: #dc262680 !important;
+}
+
 /* Override Leaflet map controls for dark theme */
 .leaflet-control-zoom a {
   background-color: #1f2937 !important;

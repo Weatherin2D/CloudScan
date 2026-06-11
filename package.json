@@ -5,6 +5,8 @@
   "scripts": {
     "preinstall": "node scripts/preinstall.mjs",
     "dev": "pnpm --filter @workspace/weather-radar run dev",
+    "start": "pnpm --filter @workspace/weather-radar run serve",
+    "build:deploy": "pnpm --filter @workspace/weather-radar run build",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "build:pages": "node scripts/build-pages.mjs",
     "typecheck:libs": "tsc --build",

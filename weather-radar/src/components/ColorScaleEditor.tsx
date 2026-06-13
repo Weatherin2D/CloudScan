@@ -138,7 +138,7 @@ export default function ColorScaleEditor({ stops, onChange }: Props) {
         setSelected(null);
       } catch {
         alert(
-          "Invalid palette file.\n\nExpected RadarScope .pal format:\n" +
+          "Invalid palette file.\n\nExpected Default .pal format:\n" +
           "Product: BR\nUnits: DBZ\nColor4: 10 0 255 0 255",
         );
       }
@@ -210,7 +210,7 @@ export default function ColorScaleEditor({ stops, onChange }: Props) {
           <span>{PAL_DBZ_MAX} dBZ</span>
         </div>
         <p className="text-[10px] text-gray-600 mt-0.5">
-          RadarScope format · click to add · drag handles · gold = SolidColor band
+          Default format · click to add · drag handles · gold = SolidColor band
         </p>
       </div>
 

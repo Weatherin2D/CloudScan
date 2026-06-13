@@ -1,9 +1,10 @@
+import { proxiedApiBase } from "./apiProxy";
 import { iemRidgeSector } from "./iemRadar";
 
-export const LEVEL3_S3_BASE =
-  import.meta.env.DEV
-    ? "/api/nexrad-l3"
-    : "https://unidata-nexrad-level3.s3.amazonaws.com";
+export const LEVEL3_S3_BASE = proxiedApiBase(
+  "/api/nexrad-l3",
+  "https://unidata-nexrad-level3.s3.amazonaws.com",
+);
 
 export interface Level3Frame {
   time: number;

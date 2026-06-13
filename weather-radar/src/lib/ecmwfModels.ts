@@ -1,5 +1,7 @@
 /** ECMWF IFS forecast via Open-Meteo. */
 
+import { proxiedApiBase } from "./apiProxy";
+
 export type ModelVariableId =
   | "precipitation"
   | "rain"
@@ -166,7 +168,7 @@ export function scalarParamForDisplay(
 }
 
 export function ecmwfApiBase(): string {
-  return import.meta.env.DEV ? "/api/open-meteo" : "https://api.open-meteo.com";
+  return proxiedApiBase("/api/open-meteo", "https://api.open-meteo.com");
 }
 
 export function ecmwfForecastUrl(params: URLSearchParams): string {

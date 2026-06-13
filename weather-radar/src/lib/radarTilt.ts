@@ -4,6 +4,7 @@ import {
   type RadarDataSource,
   type RadarProduct,
 } from "./radarProducts";
+import { isIemProductSupported } from "./iemRadar";
 
 export interface RadarTilt {
   index: number;
@@ -78,7 +79,11 @@ export function resolveStationDataSource(
 
   if (!productSupportsTilt(product)) return baseSource;
 
-  if (tiltIndex === 0 && baseSource === "iem") return "iem";
+  // Lowest tilt: IEM serves georeferenced TMS tiles (avoids stretched polar overlays).
+  if (tiltIndex === 0 && baseSource === "iem" && isIemProductSupported(productId)) {
+    return "iem";
+  }
+
   if (baseSource === "level3" || tiltIndex > 0) return "level3";
 
   return baseSource;
@@ -100,4 +105,22 @@ export function shouldUseIemFrames(
 ): boolean {
   if (!country || country !== "us") return false;
   return resolveStationDataSource(productId, "us", tiltIndex) === "iem";
+}
+
+/** Cross-section always needs multi-tilt volume data, not single-tilt tiles. */
+export function resolveCrossSectionDataSource(
+  productId: string,
+  country: "us" | "eu" | "uk" | "au",
+): RadarDataSource | null {
+  const product = getRadarProduct(productId);
+  if (!product) return null;
+
+  if (country === "eu") return "opera";
+  if (country !== "us") return null;
+
+  const baseSource = productSourceForCountry(productId, country);
+  if (!baseSource) return null;
+  if (!productSupportsTilt(product)) return baseSource === "level3" ? "level3" : null;
+
+  return "level3";
 }

@@ -26,9 +26,8 @@ export const IEM_RIDGE_TILE_OPTS: TileLayerOptions = {
   attribution: "IEM/NEXRAD",
 };
 
-/** Per-station overlay: load tiles during map fly/pan so the latest scan appears sooner. */
+/** Per-station overlay — keep georeferenced tiles crisp (no CSS scaling during pan/zoom). */
 export const STATION_IEM_TILE_OPTS: TileLayerOptions = {
   ...IEM_RIDGE_TILE_OPTS,
-  updateWhenIdle: false,
   keepBuffer: 4,
 };

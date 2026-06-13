@@ -16,6 +16,7 @@ import {
   type OutlookDay,
   type SpcOutlookProperties,
 } from "@/lib/spcOutlook";
+import { proxiedApiBase } from "./apiProxy";
 
 export type { OutlookDay } from "@/lib/spcOutlook";
 export { SPC_RISK_LEGEND, formatOutlookIssue };
@@ -42,7 +43,7 @@ export interface ConvectiveRiskProperties extends SpcOutlookProperties {
 const MESOCAST_DAY1_PATH = "/wp-json/metconvect-nowcast/v1/day1";
 
 function mesoCastBaseUrl(): string {
-  return import.meta.env.DEV ? "/api/mesocast" : "https://mesocast.uk";
+  return proxiedApiBase("/api/mesocast", "https://mesocast.uk");
 }
 
 export function mesoCastOutlookUrl(): string {

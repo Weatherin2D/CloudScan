@@ -272,6 +272,12 @@ export function iemIndexToDbz(index: number): number | null {
   return -32 + (index - 1) * 0.5;
 }
 
+/** Palette index to radial velocity (knots) for IEM N0S tiles. */
+export function iemIndexToVelocity(index: number): number | null {
+  if (index <= 1) return null;
+  return (index - 2) * 0.5;
+}
+
 const RGB_TO_IEM_INDEX = new Map<number, number>();
 for (let i = 0; i < IEM_NEXRAD_RGB.length; i++) {
   const [r, g, b] = IEM_NEXRAD_RGB[i];

@@ -1,12 +1,17 @@
+import { proxiedApiBase } from "./apiProxy";
 import { OPERA_STATION_MAP } from "./operaStationMap";
 import { operaElevationForTilt } from "./radarTilt";
 import type { OdimScanMeta } from "./renderPolar";
 
-export const METEOGATE_BASE =
-  import.meta.env.DEV ? "/api/meteogate" : "https://api.meteogate.eu";
+export const METEOGATE_BASE = proxiedApiBase(
+  "/api/meteogate",
+  "https://api.meteogate.eu",
+);
 
-export const OPENRADAR_S3_BASE =
-  import.meta.env.DEV ? "/api/openradar" : "https://s3.waw3-1.cloudferro.com";
+export const OPENRADAR_S3_BASE = proxiedApiBase(
+  "/api/openradar",
+  "https://s3.waw3-1.cloudferro.com",
+);
 
 export interface OperaFrame {
   time: number;

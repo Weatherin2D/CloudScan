@@ -1,6 +1,7 @@
-import { latLonToTile } from "@/lib/iemRadar";
+import { latLonToTile, iemProductId, iemRidgeSector } from "@/lib/iemRadar";
 import { rainViewerByteToDbz } from "@/lib/palPalette";
-import { iemIndexToDbz, iemRgbToIndex } from "@/lib/iemColormap";
+import { iemIndexToDbz, iemIndexToVelocity, iemRgbToIndex } from "@/lib/iemColormap";
+import { getRadarProduct } from "@/lib/radarProducts";
 
 const tileCanvasCache = new Map<string, HTMLCanvasElement>();
 
@@ -65,6 +66,10 @@ async function samplePixel(
   return decode(d[0], d[1], d[2], d[3]);
 }
 
+export function pickProbeZoom(mapZoom: number): number {
+  return Math.max(5, Math.min(8, Math.round(mapZoom)));
+}
+
 export function pickSampleZoom(lineLengthKm: number): number {
   if (lineLengthKm > 800) return 5;
   if (lineLengthKm > 300) return 6;
@@ -99,8 +104,36 @@ export async function sampleIemDbz(
   tmsId: string,
   zoom: number,
 ): Promise<number | null> {
-  const sector = stationId.length === 4 ? stationId.slice(1) : stationId;
-  const prod = product.toUpperCase().replace("N0Q", "N0B").replace("N0U", "N0S");
+  return sampleIemProduct(lat, lon, stationId, product, tmsId, zoom);
+}
+
+function iemValueFromIndex(productId: string, index: number): number | null {
+  const product = getRadarProduct(productId);
+  if (!product || index <= 0) return null;
+
+  switch (product.family) {
+    case "velocity":
+      return iemIndexToVelocity(index);
+    case "reflectivity":
+    case "longrange":
+      return iemIndexToDbz(index);
+    case "echotops":
+      return (index - 1) * 0.5;
+    default:
+      return index - 1;
+  }
+}
+
+export async function sampleIemProduct(
+  lat: number,
+  lon: number,
+  stationId: string,
+  product: string,
+  tmsId: string,
+  zoom: number,
+): Promise<number | null> {
+  const sector = iemRidgeSector(stationId);
+  const prod = iemProductId(product);
   return samplePixel(
     lat,
     lon,
@@ -110,8 +143,7 @@ export async function sampleIemDbz(
     (r, g, b, a) => {
       if (a < 10) return null;
       const idx = iemRgbToIndex(r, g, b);
-      if (idx <= 0) return null;
-      return iemIndexToDbz(idx);
+      return iemValueFromIndex(product, idx);
     },
   );
 }

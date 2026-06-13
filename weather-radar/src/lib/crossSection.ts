@@ -60,8 +60,50 @@ export function interpolateLine(start: LatLng, end: LatLng, count: number): LatL
   return points;
 }
 
+/** Great-circle points along constant bearing — required for radar radial slices. */
+export function interpolateGreatCircleLine(
+  start: LatLng,
+  end: LatLng,
+  count: number,
+  bearingDeg: (lat1: number, lon1: number, lat2: number, lon2: number) => number,
+  destinationPoint: (
+    lat: number,
+    lon: number,
+    bearing: number,
+    distKm: number,
+  ) => { lat: number; lon: number },
+): LatLng[] {
+  const totalKm = haversineKm(start, end);
+  if (count <= 1 || totalKm < 0.001) {
+    return [{ lat: start.lat, lon: start.lon }];
+  }
+
+  const az = bearingDeg(start.lat, start.lon, end.lat, end.lon);
+  const points: LatLng[] = [];
+  for (let i = 0; i < count; i++) {
+    const rangeKm = (i / (count - 1)) * totalKm;
+    if (rangeKm < 0.001) {
+      points.push({ lat: start.lat, lon: start.lon });
+    } else {
+      points.push(destinationPoint(start.lat, start.lon, az, rangeKm));
+    }
+  }
+  return points;
+}
+
 export function lineLengthKm(start: LatLng, end: LatLng): number {
   return haversineKm(start, end);
+}
+
+/** Radar RHI slices always originate at the station; end is the user-chosen direction. */
+export function anchorRadarSliceAtStation(
+  station: LatLng,
+  end: LatLng,
+): { start: LatLng; end: LatLng } {
+  return {
+    start: { lat: station.lat, lon: station.lon },
+    end,
+  };
 }
 
 async function fetchProfileBatch(

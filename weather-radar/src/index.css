@@ -313,3 +313,10 @@
     inset: -1px;
   }
 }
+
+/* Pixel probe — Leaflet divIcon reticle (no default marker chrome) */
+.leaflet-div-icon.pixel-probe-picker {
+  background: transparent;
+  border: none;
+  pointer-events: none;
+}

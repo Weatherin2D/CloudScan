@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import type { ColorStop } from "@/lib/palPalette";
+import type { PolarRenderResult } from "@/lib/renderPolar";
 
 export interface PolarFrame {
   time: number;
@@ -13,10 +14,7 @@ interface Props<T extends PolarFrame> {
   frameIndex: number;
   opacity: number;
   stops: ColorStop[];
-  loadFrame: (frame: T) => Promise<{
-    dataUrl: string;
-    bounds: L.LatLngBoundsExpression;
-  } | null>;
+  loadFrame: (frame: T) => Promise<PolarRenderResult | null>;
 }
 
 export default function PolarRadarLayer<T extends PolarFrame>({
@@ -29,9 +27,7 @@ export default function PolarRadarLayer<T extends PolarFrame>({
   const map = useMap();
   const overlaysRef = useRef<Map<string, L.ImageOverlay>>(new Map());
   const stopsRef = useRef(stops);
-  const cacheRef = useRef(
-    new Map<string, { dataUrl: string; bounds: L.LatLngBoundsExpression }>(),
-  );
+  const cacheRef = useRef(new Map<string, PolarRenderResult>());
   const loadingRef = useRef(new Set<string>());
   const [cacheRev, bumpCache] = useState(0);
 
@@ -79,8 +75,7 @@ export default function PolarRadarLayer<T extends PolarFrame>({
 
   useEffect(() => {
     overlaysRef.current.forEach((ov, id) => {
-      const active = id === activeId;
-      ov.setOpacity(active ? opacity : 0);
+      ov.setOpacity(id === activeId ? opacity : 0);
     });
 
     if (!activeId || !cacheRef.current.has(activeId)) return;

@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { nexradLevel3Cjs } from "./viteNexradCjsPlugin";
 
 const rawPort = process.env.PORT ?? "20405";
 const port = Number(rawPort);
@@ -16,6 +17,7 @@ const basePath = process.env.BASE_PATH ?? "/";
 export default defineConfig({
   base: basePath,
   plugins: [
+    nexradLevel3Cjs(),
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
@@ -43,28 +45,35 @@ export default defineConfig({
       { find: "buffer", replacement: "buffer/" },
       {
         find: /^nexrad-level-3-data$/,
-        replacement: path.resolve(import.meta.dirname, "src/lib/nexradBrowser/index.js"),
+        replacement: path.resolve(import.meta.dirname, "../lib/nexrad-browser/src/index.js"),
+      },
+      {
+        find: /nexrad-level-3-data[\\/]src[\\/]randomaccessfile(?:[\\/]index\.js)?$/,
+        replacement: path.resolve(import.meta.dirname, "../lib/nexrad-browser/src/randomaccessfile.js"),
       },
       {
         find: /nexrad-level-3-data[\\/]src[\\/]packets[\\/]index\.js$/,
-        replacement: path.resolve(import.meta.dirname, "src/lib/nexradBrowser/packets.js"),
+        replacement: path.resolve(import.meta.dirname, "../lib/nexrad-browser/src/packets.js"),
       },
       {
         find: /nexrad-level-3-data[\\/]src[\\/]products[\\/]index\.js$/,
-        replacement: path.resolve(import.meta.dirname, "src/lib/nexradBrowser/products.js"),
+        replacement: path.resolve(import.meta.dirname, "../lib/nexrad-browser/src/products.js"),
       },
     ],
     dedupe: ["react", "react-dom"],
   },
   optimizeDeps: {
     include: ["buffer", "seek-bzip", "h5wasm"],
-    exclude: ["nexrad-level-3-data"],
   },
-  root: path.resolve(import.meta.dirname),
   build: {
+    commonjsOptions: {
+      include: [/nexrad-level-3-data/, /node_modules/],
+      transformMixedEsModules: true,
+    },
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
+  root: path.resolve(import.meta.dirname),
   server: {
     port,
     strictPort: true,

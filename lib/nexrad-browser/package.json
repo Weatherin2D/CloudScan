@@ -1,0 +1,13 @@
+{
+  "name": "@workspace/nexrad-browser",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "buffer": "^6.0.3",
+    "seek-bzip": "^2.0.0"
+  }
+}

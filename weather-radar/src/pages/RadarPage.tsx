@@ -5,7 +5,7 @@ import L from "leaflet";
 import {
   Cloud, Play, Pause, ChevronLeft, ChevronRight, Clock,
   Layers, Zap, Radio, Map, X, Info, Settings, Palette, AlertTriangle, Pencil, ShieldAlert,
-  BarChart3, LayoutPanelTop, Globe2,
+  BarChart3, LayoutPanelTop, Globe2, Satellite, CloudRain, Crosshair,
 } from "lucide-react";
 import {
   ALL_STATIONS,
@@ -53,7 +53,17 @@ import ModelTimeline from "@/components/ModelTimeline";
 import AltitudeSelector from "@/components/AltitudeSelector";
 import CrossSectionTool, { MapBoundsReporter } from "@/components/CrossSectionTool";
 import CrossSectionPanel from "@/components/CrossSectionPanel";
+import RhiCurtainOverlay from "@/components/RhiCurtainOverlay";
 import RadarMapPane from "@/components/RadarMapPane";
+import SatelliteOverlayLayer from "@/components/SatelliteOverlayLayer";
+import PixelProbeTool from "@/components/PixelProbeTool";
+import PixelProbePanel from "@/components/PixelProbePanel";
+import {
+  probeRadarPixel,
+  clearLevel3ProbeCache,
+  type PixelProbeContext,
+  type PixelProbeResult,
+} from "@/lib/pixelProbe";
 import type { MapViewState } from "@/components/MapViewSync";
 import { useEcmwfTimeline, useEcmwfGrid } from "@/hooks/useEcmwfModel";
 import { useCrossSectionData } from "@/hooks/useCrossSectionData";
@@ -64,6 +74,7 @@ import {
 } from "@/lib/ecmwfModels";
 import type { MapBounds } from "@/lib/modelGrid";
 import type { LatLng } from "@/lib/crossSection";
+import { anchorRadarSliceAtStation } from "@/lib/crossSection";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { isStationSupported, stationSupportHint } from "@/lib/stationSupport";
 import {
@@ -76,6 +87,7 @@ import {
   type ColorStop,
 } from "@/lib/colorScale";
 import { RAINVIEWER_REFRESH_MS } from "@/lib/radarRefresh";
+import { SATELLITE_PRODUCTS, type SatelliteProductId } from "@/lib/satelliteImagery";
 
 const Level3RadarLayer = lazy(() => import("@/components/Level3RadarLayer"));
 const OperaRadarLayer = lazy(() => import("@/components/OperaRadarLayer"));
@@ -103,8 +115,13 @@ function formatTime(unix: number) {
 function formatDate(unix: number) {
   return new Date(unix * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 }
-function ZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
-  const map = useMapEvents({ zoomend: () => onZoom(map.getZoom()) });
+function MapViewportTracker({ onZoom }: { onZoom: (z: number) => void }) {
+  const map = useMapEvents({
+    zoomend: () => onZoom(map.getZoom()),
+  });
+  useEffect(() => {
+    onZoom(map.getZoom());
+  }, [map, onZoom]);
   return null;
 }
 
@@ -125,6 +142,7 @@ interface AppSettings {
   weatherRiskOpacity: number;
   weatherAlertsEnabled: boolean;
   weatherAlertsOpacity: number;
+  satelliteProduct: SatelliteProductId;
 }
 
 function SettingsPanel({
@@ -141,6 +159,7 @@ function SettingsPanel({
     lightningSize, lightningMaxAge,
     weatherRiskEnabled, weatherRiskDay, weatherRiskOpacity,
     weatherAlertsEnabled, weatherAlertsOpacity,
+    satelliteProduct,
   } = settings;
   const fps = (1000 / animSpeed).toFixed(1);
 
@@ -227,7 +246,7 @@ function SettingsPanel({
               >
                 <div className="h-2 w-full rounded mb-1.5" style={{ background: stopsToCss(customStops) }} />
                 <span className="text-xs text-gray-300 flex items-center gap-1.5">
-                  <Palette className="w-3 h-3 text-purple-400" /> RadarScope Palette
+                  <Palette className="w-3 h-3 text-purple-400" /> Default Palette
                   {colorScheme === -1 && <span className="ml-auto text-[10px] text-purple-400 font-medium">ACTIVE</span>}
                 </span>
               </button>
@@ -313,6 +332,34 @@ function SettingsPanel({
                   background: `linear-gradient(to right, transparent 0%, white ${Math.min(100, Math.max(0, ((reflectivityFadeEndDbz - reflectivityFadeStartDbz) / 30) * 100))}%)`,
                 }}
               />
+            </div>
+          </section>
+
+          {/* ── Satellite overlay ── */}
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">
+              Satellite Overlay
+            </h3>
+            <p className="text-[10px] text-gray-600 mb-3">
+              GOES full-disk imagery under radar. Auto fades visible → infrared after local sunset.
+            </p>
+            <div className="grid grid-cols-1 gap-1.5">
+              {(Object.entries(SATELLITE_PRODUCTS) as [SatelliteProductId, typeof SATELLITE_PRODUCTS[SatelliteProductId]][]).map(
+                ([id, item]) => (
+                  <button
+                    key={id}
+                    onClick={() => onChange({ satelliteProduct: id })}
+                    className={`text-left px-3 py-2 rounded-lg border transition-all ${
+                      satelliteProduct === id
+                        ? "border-sky-500 bg-sky-500/10 ring-1 ring-sky-500/40"
+                        : "border-gray-700 hover:border-gray-500 hover:bg-gray-800/50"
+                    }`}
+                  >
+                    <span className="text-sm text-gray-200 block">{item.label}</span>
+                    <span className="text-[10px] text-gray-500">{item.description}</span>
+                  </button>
+                ),
+              )}
             </div>
           </section>
 
@@ -743,6 +790,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   weatherRiskOpacity: 0.75,
   weatherAlertsEnabled: false,
   weatherAlertsOpacity: 0.7,
+  satelliteProduct: "auto",
 };
 
 export default function RadarPage() {
@@ -757,6 +805,8 @@ export default function RadarPage() {
   const [selectedProduct, setSelectedProduct] = useState(STATION_RADAR_PRODUCTS[0]);
   const [selectedTilt, setSelectedTilt] = useState(0);
   const [lightningEnabled, setLightningEnabled] = useState(false);
+  const [satelliteOverlayEnabled, setSatelliteOverlayEnabled] = useState(false);
+  const [globalRadarEnabled, setGlobalRadarEnabled] = useState(true);
   const [stationSearch, setStationSearch] = useState("");
   const [alertsPanelOpen, setAlertsPanelOpen] = useState(true);
   const [alertSearch, setAlertSearch] = useState("");
@@ -786,6 +836,10 @@ export default function RadarPage() {
   const [crossSectionMode, setCrossSectionMode] = useState(false);
   const [crossSectionStart, setCrossSectionStart] = useState<LatLng | null>(null);
   const [crossSectionEnd, setCrossSectionEnd] = useState<LatLng | null>(null);
+  const [probeMode, setProbeMode] = useState(false);
+  const [probePoint, setProbePoint] = useState<LatLng | null>(null);
+  const [probeResult, setProbeResult] = useState<PixelProbeResult | null>(null);
+  const [probeLoading, setProbeLoading] = useState(false);
   const [rhiPanelOpen, setRhiPanelOpen] = useState(false);
   const [splitLayout, setSplitLayout] = useState<SplitLayout>("single");
   const [paneProducts, setPaneProducts] = useState<string[]>(DEFAULT_PANE_PRODUCTS);
@@ -799,6 +853,7 @@ export default function RadarPage() {
   const modelPlayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const liveEdgeRef = useRef(true);
   const prevLastScanTimeRef = useRef<number | null>(null);
+  const probeSeqRef = useRef(0);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 639px)");
@@ -819,6 +874,19 @@ export default function RadarPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [drawMode]);
+
+  useEffect(() => {
+    if (!probeMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setProbeMode(false);
+        setProbePoint(null);
+        setProbeResult(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [probeMode]);
 
   const reflectivityFade = useMemo(
     () => normalizeReflectivityFade(
@@ -1000,12 +1068,32 @@ export default function RadarPage() {
     [useStationTimeline, activeStationFrames, displayFrames],
   );
 
+  const crossSectionDisplayStart = useMemo(() => {
+    if (mode === "station" && selectedStation) {
+      return { lat: selectedStation.lat, lon: selectedStation.lon };
+    }
+    return crossSectionStart;
+  }, [mode, selectedStation, crossSectionStart]);
+
+  const crossSectionSlice = useMemo(() => {
+    if (mode === "station" && selectedStation && crossSectionEnd) {
+      return anchorRadarSliceAtStation(
+        { lat: selectedStation.lat, lon: selectedStation.lon },
+        crossSectionEnd,
+      );
+    }
+    if (crossSectionStart && crossSectionEnd) {
+      return { start: crossSectionStart, end: crossSectionEnd };
+    }
+    return null;
+  }, [mode, selectedStation, crossSectionStart, crossSectionEnd]);
+
   const { result: crossSectionResult, loading: crossSectionLoading, error: crossSectionError } =
     useCrossSectionData({
-      enabled: rhiPanelOpen && !!crossSectionStart && !!crossSectionEnd,
+      enabled: rhiPanelOpen && !!crossSectionSlice,
       kind: mode === "models" ? "ecmwf" : "radar",
-      start: crossSectionStart,
-      end: crossSectionEnd,
+      start: crossSectionSlice?.start ?? null,
+      end: crossSectionSlice?.end ?? null,
       modelHourIndex,
       radar:
         mode === "station" && selectedStation
@@ -1014,8 +1102,9 @@ export default function RadarPage() {
               productId: selectedProduct.id,
               dataSource,
               frameTime: timelineFrames[frameIndex]?.time,
-              iemTmsId:
-                dataSource === "iem" ? stationFrames[frameIndex]?.tmsId : undefined,
+              iemTmsId: stationFrames[frameIndex]?.tmsId ?? stationFrames.at(-1)?.tmsId,
+              level3FrameKey:
+                level3Frames[frameIndex]?.key ?? level3Frames.at(-1)?.key,
             }
           : undefined,
     });
@@ -1114,6 +1203,12 @@ export default function RadarPage() {
   }, []);
 
   const handleCrossSectionPoint = useCallback((point: LatLng) => {
+    if (mode === "station" && selectedStation) {
+      setCrossSectionStart({ lat: selectedStation.lat, lon: selectedStation.lon });
+      setCrossSectionEnd(point);
+      setRhiPanelOpen(true);
+      return;
+    }
     if (!crossSectionStart || (crossSectionStart && crossSectionEnd)) {
       setCrossSectionStart(point);
       setCrossSectionEnd(null);
@@ -1121,7 +1216,13 @@ export default function RadarPage() {
       return;
     }
     setCrossSectionEnd(point);
-  }, [crossSectionStart, crossSectionEnd]);
+  }, [mode, selectedStation, crossSectionStart, crossSectionEnd]);
+
+  useEffect(() => {
+    if (mode === "station" && selectedStation && crossSectionMode) {
+      setCrossSectionStart({ lat: selectedStation.lat, lon: selectedStation.lon });
+    }
+  }, [selectedStation?.id, selectedStation?.lat, selectedStation?.lon, mode, crossSectionMode]);
 
   useEffect(() => {
     if (selectedStation) {
@@ -1154,12 +1255,21 @@ export default function RadarPage() {
   }, []);
 
   const splitViewActive = mode === "station" && !!selectedStation && splitLayout !== "single";
+  const probeAvailable = mode !== "models" && !splitViewActive;
   const crossSectionAvailable = mode === "station" || mode === "models";
   const splitViewAvailable = mode === "station" && !!selectedStation;
 
   useEffect(() => {
     if (mode !== "station") setSplitLayout("single");
   }, [mode]);
+
+  useEffect(() => {
+    if (splitViewActive && probeMode) {
+      setProbeMode(false);
+      setProbePoint(null);
+      setProbeResult(null);
+    }
+  }, [splitViewActive, probeMode]);
 
   useEffect(() => {
     setPaneProducts((prev) => {
@@ -1184,10 +1294,120 @@ export default function RadarPage() {
         setRhiPanelOpen(false);
       } else {
         setDrawMode(false);
+        setProbeMode(false);
+        setProbePoint(null);
+        setProbeResult(null);
+        if (mode === "station" && selectedStation) {
+          setCrossSectionStart({ lat: selectedStation.lat, lon: selectedStation.lon });
+          setCrossSectionEnd(null);
+        }
+      }
+      return next;
+    });
+  }, [mode, selectedStation]);
+
+  const toggleProbeTool = useCallback(() => {
+    setProbeMode((v) => {
+      const next = !v;
+      if (!next) {
+        setProbePoint(null);
+        setProbeResult(null);
+      } else {
+        setDrawMode(false);
+        setCrossSectionMode(false);
+        setCrossSectionStart(null);
+        setCrossSectionEnd(null);
+        setRhiPanelOpen(false);
       }
       return next;
     });
   }, []);
+
+  const probeContext = useMemo((): PixelProbeContext => {
+    const frame = timelineFrames[frameIndex];
+    const ctx: PixelProbeContext = {
+      mode,
+      mapZoom,
+      frameTime: frame?.time,
+    };
+
+    if (mode === "overview" || mode === "alerts") {
+      const rvFrame = displayFrames[Math.min(frameIndex, displayFrames.length - 1)];
+      if (rvFrame && globalRadarEnabled) {
+        ctx.rainViewerFramePath = rvFrame.path;
+      }
+    } else if (mode === "station" && selectedStation) {
+      ctx.product = selectedProduct;
+      ctx.dataSource = dataSource;
+      ctx.stationId = selectedStation.id;
+      ctx.stationLat = selectedStation.lat;
+      ctx.stationLon = selectedStation.lon;
+      if (dataSource === "iem") {
+        ctx.iemTmsId = stationFrames[frameIndex]?.tmsId ?? stationFrames.at(-1)?.tmsId;
+      } else if (dataSource === "level3") {
+        ctx.level3FrameKey = level3Frames[frameIndex]?.key ?? level3Frames.at(-1)?.key;
+      } else if (dataSource === "opera") {
+        ctx.operaOdimUrl = operaFrames[frameIndex]?.odimUrl ?? operaFrames.at(-1)?.odimUrl;
+      }
+    }
+
+    return ctx;
+  }, [
+    mode,
+    mapZoom,
+    timelineFrames,
+    frameIndex,
+    displayFrames,
+    globalRadarEnabled,
+    selectedStation,
+    selectedProduct,
+    dataSource,
+    stationFrames,
+    level3Frames,
+    operaFrames,
+  ]);
+
+  const runProbe = useCallback(
+    async (point: LatLng) => {
+      const seq = ++probeSeqRef.current;
+      setProbeLoading(true);
+      try {
+        const result = await probeRadarPixel(probeContext, point.lat, point.lon);
+        if (seq !== probeSeqRef.current) return;
+        setProbeResult(result);
+      } finally {
+        if (seq === probeSeqRef.current) setProbeLoading(false);
+      }
+    },
+    [probeContext],
+  );
+
+  const handleProbePoint = useCallback((point: LatLng | null) => {
+    setProbePoint(point);
+    if (!point) {
+      probeSeqRef.current += 1;
+      setProbeLoading(false);
+      setProbeResult(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!probePoint || !probeMode) return;
+    const timer = setTimeout(() => void runProbe(probePoint), 75);
+    return () => clearTimeout(timer);
+  }, [probePoint, probeMode, runProbe]);
+
+  useEffect(() => {
+    if (mode === "models") {
+      setProbeMode(false);
+      setProbePoint(null);
+      setProbeResult(null);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    return () => clearLevel3ProbeCache();
+  }, [selectedProduct.id, selectedStation?.id]);
 
   const handleEnterAlertsMode = useCallback(() => {
     setMode("alerts");
@@ -1250,6 +1470,9 @@ export default function RadarPage() {
     setStationRadarStatus("loading");
   }, []);
 
+  const showSatelliteOverlay =
+    satelliteOverlayEnabled && mode !== "models";
+
   const currentFrame = timelineFrames[frameIndex];
 
   const tileLayers = {
@@ -1287,7 +1510,7 @@ export default function RadarPage() {
     mode === "station"
       ? selectedProduct.label
       : isCustomScale
-        ? "RadarScope"
+        ? "Default"
         : currentColorScheme.label;
   const legendMin =
     mode === "station" ? (selectedProduct.legendMin ?? "Light") : "Light";
@@ -1336,25 +1559,73 @@ export default function RadarPage() {
           )}
         </button>
 
+        {/* Satellite underlay (GOES visible + radar on top) */}
+        <button
+          onClick={() => setSatelliteOverlayEnabled(v => !v)}
+          disabled={mode === "models"}
+          className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-lg text-sm font-medium border transition-all ${
+            satelliteOverlayEnabled
+              ? "bg-sky-500/20 border-sky-500/60 text-sky-300"
+              : "border-gray-700 text-gray-400 hover:text-white hover:bg-gray-800"
+          } ${mode === "models" ? "opacity-40 pointer-events-none" : ""}`}
+        >
+          <Satellite className="w-3.5 h-3.5" />
+          <span className="hidden sm:block">Satellite</span>
+        </button>
+
+        {/* Global radar composite toggle */}
+        {(mode === "overview" || mode === "alerts") && (
+          <button
+            onClick={() => setGlobalRadarEnabled(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-lg text-sm font-medium border transition-all ${
+              globalRadarEnabled
+                ? "bg-blue-500/20 border-blue-500/60 text-blue-300"
+                : "border-gray-700 text-gray-400 hover:text-white hover:bg-gray-800"
+            }`}
+          >
+            <CloudRain className="w-3.5 h-3.5" />
+            <span className="hidden sm:block">Radar</span>
+          </button>
+        )}
+
         {/* Map type */}
         <button onClick={() => setMapType(t => t === "dark" ? "satellite" : "dark")}
+          title={mapType === "dark" ? "Switch to satellite basemap" : "Switch to dark basemap"}
           className="flex items-center gap-1.5 px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-gray-800 border border-gray-700 transition-all">
           <Layers className="w-3.5 h-3.5" />
-          <span className="hidden sm:block">{mapType === "dark" ? "Satellite" : "Dark"}</span>
+          <span className="hidden sm:block">Map</span>
         </button>
 
         {/* Draw */}
         <button
           onClick={() => setDrawMode(v => !v)}
-          disabled={mode === "models" || crossSectionMode}
+          disabled={mode === "models" || crossSectionMode || probeMode}
           className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-lg text-sm border transition-all ${
             drawMode
               ? "bg-amber-500/20 border-amber-500/60 text-amber-300"
               : "text-gray-400 hover:text-white hover:bg-gray-800 border-gray-700"
-          } ${mode === "models" || crossSectionMode ? "opacity-40 pointer-events-none" : ""}`}
+          } ${mode === "models" || crossSectionMode || probeMode ? "opacity-40 pointer-events-none" : ""}`}
         >
           <Pencil className="w-3.5 h-3.5" />
           <span className="hidden sm:block">Draw</span>
+        </button>
+
+        <button
+          onClick={toggleProbeTool}
+          disabled={!probeAvailable}
+          title={
+            probeAvailable
+              ? "Move cursor over the map to inspect radar values"
+              : "Pixel probe is unavailable in split view or Weather Models mode"
+          }
+          className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-lg text-sm border transition-all ${
+            probeMode
+              ? "bg-cyan-500/20 border-cyan-500/60 text-cyan-300"
+              : "text-gray-400 hover:text-white hover:bg-gray-800 border-gray-700"
+          } ${!probeAvailable ? "opacity-40 pointer-events-none" : ""}`}
+        >
+          <Crosshair className="w-3.5 h-3.5" />
+          <span className="hidden sm:block">Probe</span>
         </button>
 
         <button
@@ -1711,7 +1982,7 @@ export default function RadarPage() {
                   products={stationProductList}
                   onProductChange={handlePaneProductChange}
                   crossSectionMode={crossSectionMode}
-                  crossSectionStart={crossSectionStart}
+                  crossSectionStart={crossSectionDisplayStart}
                   crossSectionEnd={crossSectionEnd}
                   onCrossSectionPoint={handleCrossSectionPoint}
                   customReflectivityStops={settings.customStops}
@@ -1719,6 +1990,10 @@ export default function RadarPage() {
                   reflectivityFadeStart={settings.reflectivityFadeStartDbz}
                   reflectivityFadeEnd={settings.reflectivityFadeEndDbz}
                   compact={splitLayout === "quad"}
+                  satelliteOverlayEnabled={showSatelliteOverlay}
+                  satelliteProduct={settings.satelliteProduct}
+                  satelliteFrames={timelineFrames}
+                  satelliteFrameIndex={frameIndex}
                 />
               ))}
             </div>
@@ -1729,24 +2004,36 @@ export default function RadarPage() {
             zoomControl={true} attributionControl={false} worldCopyJump={true}>
 
             <TileLayer url={tileLayers[mapType]} />
-            <ZoomTracker onZoom={setMapZoom} />
+            <MapViewportTracker onZoom={setMapZoom} />
+
+            {showSatelliteOverlay && (
+              <SatelliteOverlayLayer
+                enabled
+                opacity={1}
+                product={settings.satelliteProduct}
+                frames={timelineFrames}
+                frameIndex={frameIndex}
+              />
+            )}
 
             {mode === "overview" || mode === "alerts" ? (
-              isCustomScale ? (
-                <CanvasRainViewerLayer
-                  frames={displayFrames}
-                  frameIndex={frameIndex}
-                  opacity={opacity}
-                  lut={rainViewerLUT}
-                />
-              ) : (
-                <StandardRainViewerLayer
-                  frames={displayFrames}
-                  frameIndex={frameIndex}
-                  opacity={opacity}
-                  colorScheme={settings.colorScheme}
-                />
-              )
+              globalRadarEnabled ? (
+                isCustomScale ? (
+                  <CanvasRainViewerLayer
+                    frames={displayFrames}
+                    frameIndex={frameIndex}
+                    opacity={opacity}
+                    lut={rainViewerLUT}
+                  />
+                ) : (
+                  <StandardRainViewerLayer
+                    frames={displayFrames}
+                    frameIndex={frameIndex}
+                    opacity={opacity}
+                    colorScheme={settings.colorScheme}
+                  />
+                )
+              ) : null
             ) : null}
 
             {mode === "models" && (
@@ -1767,9 +2054,28 @@ export default function RadarPage() {
             {crossSectionMode && (
               <CrossSectionTool
                 active={crossSectionMode}
-                start={crossSectionStart}
+                start={crossSectionDisplayStart}
                 end={crossSectionEnd}
                 onPoint={handleCrossSectionPoint}
+              />
+            )}
+
+            {mode === "station"
+              && crossSectionSlice
+              && crossSectionResult?.kind === "rhi"
+              && !crossSectionLoading && (
+              <RhiCurtainOverlay
+                start={crossSectionSlice.start}
+                end={crossSectionSlice.end}
+                data={crossSectionResult.data}
+              />
+            )}
+
+            {probeMode && (
+              <PixelProbeTool
+                active={probeMode}
+                point={probePoint}
+                onPoint={handleProbePoint}
               />
             )}
 
@@ -1895,9 +2201,26 @@ export default function RadarPage() {
 
           {crossSectionMode && mode === "station" && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[650] bg-amber-950/90 backdrop-blur border border-amber-700/60 rounded-xl px-4 py-2 text-sm text-amber-200 pointer-events-none text-center max-w-md">
-              Click two points for a vertical reflectivity slice through the storm
+              Click a point on the map to slice outward from {selectedStation?.id ?? "the radar"}
             </div>
           )}
+
+          {probeMode && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[650] bg-cyan-950/90 backdrop-blur border border-cyan-700/60 rounded-xl px-4 py-2 text-sm text-cyan-200 pointer-events-none text-center max-w-md">
+              Move cursor over the map to read {mode === "station" ? selectedProduct.label.toLowerCase() : "reflectivity"}
+            </div>
+          )}
+
+          <PixelProbePanel
+            active={probeMode}
+            result={probeResult}
+            loading={probeLoading}
+            onClose={() => {
+              setProbeMode(false);
+              setProbePoint(null);
+              setProbeResult(null);
+            }}
+          />
 
           {/* ─── Map overlays (bottom-right) ─────────────────────────────── */}
           {!splitViewActive && (
@@ -2151,9 +2474,6 @@ export default function RadarPage() {
               <Clock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
               <span className="text-sm font-medium">{formatTime(currentFrame.time)}</span>
               <span className="text-sm text-gray-500 hidden xs:block">{formatDate(currentFrame.time)}</span>
-              {!useStationTimeline && frameIndex >= displayFrames.length - 3 && displayFrames.length > 3 && (
-                <span className="px-1.5 py-0.5 rounded text-xs bg-blue-900/60 text-blue-300 border border-blue-700/50">Forecast</span>
-              )}
               {useStationTimeline && (
                 <span className="px-1.5 py-0.5 rounded text-xs bg-gray-800 text-gray-400 border border-gray-700">
                   {frameIndex + 1} / {timelineFrames.length}
@@ -2164,15 +2484,12 @@ export default function RadarPage() {
 
           {timelineFrames.length > 0 && (
             <div className="flex gap-0.5 mb-2 h-4 sm:h-2">
-              {timelineFrames.map((f, i) => {
-                const isForecast = !useStationTimeline && i >= displayFrames.length - 3;
-                return (
+              {timelineFrames.map((f, i) => (
                   <button key={`${f.time}-${i}`}
                     onClick={() => { setPlaying(false); setFrameIndex(i); }}
-                    className={`flex-1 rounded transition-all h-full ${i === frameIndex ? "bg-blue-500 sm:scale-y-150" : isForecast ? "bg-blue-900/60 hover:bg-blue-700/60" : "bg-gray-700 hover:bg-gray-500"}`}
+                    className={`flex-1 rounded transition-all h-full ${i === frameIndex ? "bg-blue-500 sm:scale-y-150" : "bg-gray-700 hover:bg-gray-500"}`}
                     title={formatTime(f.time)} />
-                );
-              })}
+              ))}
             </div>
           )}
 

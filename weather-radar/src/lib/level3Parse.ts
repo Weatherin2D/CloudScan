@@ -17,7 +17,7 @@ let parserPromise: Promise<NexradParser> | null = null;
 
 function loadParser(): Promise<NexradParser> {
   if (!parserPromise) {
-    parserPromise = import("@/lib/nexradBrowser/index.js").then((m) => m.default);
+    parserPromise = import("@workspace/nexrad-browser").then((m) => m.default);
   }
   return parserPromise;
 }
@@ -62,6 +62,33 @@ function maskDigitalDualPol(layer: Level3RadialLayer): void {
   }
 }
 
+/** Merge single or multi-packet symbology layers into one radial layer. */
+export function flattenRadialLayer(
+  entry: Level3RadialLayer | Level3RadialLayer[] | undefined,
+): Level3RadialLayer | null {
+  if (!entry) return null;
+  if (!Array.isArray(entry)) {
+    return entry.radials?.length ? entry : null;
+  }
+
+  const packets = entry.filter(
+    (packet): packet is Level3RadialLayer =>
+      Boolean(packet && !Array.isArray(packet) && packet.radials?.length),
+  );
+  if (!packets.length) return null;
+
+  const base = packets[0];
+  const radials = packets.flatMap((packet) => packet.radials);
+  const radialsRaw = packets.flatMap((packet) => packet.radialsRaw ?? []);
+
+  return {
+    ...base,
+    numberRadials: radials.length,
+    radials,
+    radialsRaw: radialsRaw.length ? radialsRaw : undefined,
+  };
+}
+
 export async function parseLevel3(buffer: ArrayBuffer): Promise<Level3Parsed | null> {
   const parser = await loadParser();
   const data = parser(Buffer.from(buffer), { logger: false }) as {
@@ -71,11 +98,11 @@ export async function parseLevel3(buffer: ArrayBuffer): Promise<Level3Parsed | n
       elevationAngle?: number;
       code?: number;
     };
-    radialPackets?: Level3RadialLayer[];
+    radialPackets?: Array<Level3RadialLayer | Level3RadialLayer[]>;
   };
 
-  const layer = data.radialPackets?.[0];
-  if (!layer?.radials?.length) return null;
+  const layer = flattenRadialLayer(data.radialPackets?.[0]);
+  if (!layer) return null;
 
   const productCode = data.productDescription?.code;
   if (productCode != null && DIGITAL_DUAL_POL_CODES.has(productCode)) {

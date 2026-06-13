@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import type { ColorStop, ReflectivityFadeSettings } from "@/lib/palPalette";
 import { parseLevel3 } from "@/lib/level3Parse";
 import { level3ObjectUrl, type Level3Frame } from "@/lib/level3Radar";
-import { renderLevel3Radial } from "@/lib/renderPolar";
+import { renderLevel3Geographic } from "@/lib/renderPolar";
 import PolarRadarLayer from "./PolarRadarLayer";
 
 interface Props {
@@ -28,7 +28,7 @@ export default function Level3RadarLayer({
       if (!res.ok) return null;
       const parsed = await parseLevel3(await res.arrayBuffer());
       if (!parsed) return null;
-      return renderLevel3Radial(
+      return renderLevel3Geographic(
         parsed.layer,
         parsed.latitude,
         parsed.longitude,

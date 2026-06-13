@@ -10,13 +10,26 @@ export interface LightningStrike {
 
 const STRIKE_TTL = 60 * 60 * 1000;
 const MAX_STRIKES = 20_000;
-const FLUSH_MS = 100;
+const FLUSH_MS = 30;
 const KEEPALIVE_MS = 30_000;
+const SOCKET_COUNT = 2;
 
 const SOCKET_HOSTS = ["ws1", "ws2", "ws3", "ws7", "ws8"];
 
 /** Retain strikes across lightning toggle so re-enabling shows recent activity. */
 let strikeCache: LightningStrike[] = [];
+
+/** Shared socket pool — warmed on first hook mount so toggling lightning is instant. */
+let sharedSockets: WebSocket[] = [];
+let sharedKeepalive: ReturnType<typeof setInterval> | null = null;
+let sharedReconnect: ReturnType<typeof setTimeout> | null = null;
+let sharedWatchdog: ReturnType<typeof setInterval> | null = null;
+let sharedFlushTimer: ReturnType<typeof setInterval> | null = null;
+let sharedCleanupTimer: ReturnType<typeof setInterval> | null = null;
+let sharedPending: LightningStrike[] = [];
+let sharedIdx = 0;
+let sharedSubscribers = 0;
+let sharedClosed = false;
 
 function strikeKey(s: LightningStrike): string {
   return `${s.time}:${s.lat.toFixed(4)}:${s.lon.toFixed(4)}`;
@@ -128,129 +141,143 @@ function pickSocketHosts(count: number): string[] {
   return shuffled.slice(0, count);
 }
 
+function applyStrikeCache(next: LightningStrike[]) {
+  strikeCache = next;
+}
+
+function flushPending() {
+  if (!sharedPending.length) return;
+  const batch = sharedPending;
+  sharedPending = [];
+  applyStrikeCache(mergeStrikes(strikeCache, batch));
+}
+
+function connectSocket(host: string) {
+  try {
+    const ws = new WebSocket(`wss://${host}.blitzortung.org/`);
+    ws.binaryType = "arraybuffer";
+
+    ws.onopen = () => {
+      try {
+        ws.send(JSON.stringify({ a: 111 }));
+      } catch {
+        /* ignore */
+      }
+    };
+
+    ws.onmessage = async (event) => {
+      const raw = await wsDataToString(event.data as string | Blob | ArrayBuffer);
+      if (!raw) return;
+      const idx = { current: sharedIdx };
+      const parsed = parseStrikePayload(raw, idx);
+      sharedIdx = idx.current;
+      if (parsed.length) sharedPending.push(...parsed);
+    };
+
+    ws.onerror = () => ws.close();
+    sharedSockets.push(ws);
+  } catch {
+    /* ignore single host failure */
+  }
+}
+
+function connectShared() {
+  if (sharedClosed) return;
+  sharedSockets.forEach((ws) => ws.close());
+  sharedSockets = [];
+
+  for (const host of pickSocketHosts(SOCKET_COUNT)) {
+    connectSocket(host);
+  }
+
+  if (sharedKeepalive) clearInterval(sharedKeepalive);
+  sharedKeepalive = setInterval(() => {
+    for (const ws of sharedSockets) {
+      if (ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ a: 542 }));
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, KEEPALIVE_MS);
+}
+
+function scheduleReconnect() {
+  if (sharedClosed || sharedReconnect) return;
+  sharedReconnect = setTimeout(() => {
+    sharedReconnect = null;
+    connectShared();
+  }, 1500);
+}
+
+function startSharedConnection() {
+  if (sharedFlushTimer) return;
+
+  sharedClosed = false;
+  connectShared();
+
+  sharedFlushTimer = setInterval(flushPending, FLUSH_MS);
+
+  sharedWatchdog = setInterval(() => {
+    if (sharedClosed) return;
+    const open = sharedSockets.filter((ws) => ws.readyState === WebSocket.OPEN);
+    if (open.length === 0 && sharedSockets.length > 0) {
+      scheduleReconnect();
+    }
+  }, 3000);
+
+  sharedCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    applyStrikeCache(strikeCache.filter((s) => now - s.time < STRIKE_TTL));
+  }, 60_000);
+}
+
+function stopSharedConnection() {
+  sharedClosed = true;
+  if (sharedFlushTimer) clearInterval(sharedFlushTimer);
+  if (sharedCleanupTimer) clearInterval(sharedCleanupTimer);
+  if (sharedWatchdog) clearInterval(sharedWatchdog);
+  if (sharedReconnect) clearTimeout(sharedReconnect);
+  if (sharedKeepalive) clearInterval(sharedKeepalive);
+  sharedFlushTimer = null;
+  sharedCleanupTimer = null;
+  sharedWatchdog = null;
+  sharedReconnect = null;
+  sharedKeepalive = null;
+  flushPending();
+  sharedSockets.forEach((ws) => ws.close());
+  sharedSockets = [];
+}
+
 export function useLightning(enabled: boolean) {
-  const [strikes, setStrikes] = useState<LightningStrike[]>(strikeCache);
-  const pendingRef = useRef<LightningStrike[]>([]);
-  const idxRef = useRef(0);
-  const socketsRef = useRef<WebSocket[]>([]);
-  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [strikes, setStrikes] = useState<LightningStrike[]>(enabled ? strikeCache : []);
+  const enabledRef = useRef(enabled);
 
   useEffect(() => {
-    if (!enabled) {
-      if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      if (keepaliveRef.current) clearInterval(keepaliveRef.current);
-      socketsRef.current.forEach((ws) => ws.close());
-      socketsRef.current = [];
-      return;
+    enabledRef.current = enabled;
+    if (enabled) {
+      setStrikes(strikeCache);
     }
+  }, [enabled]);
 
-    const idx = { current: idxRef.current };
-    let closed = false;
+  useEffect(() => {
+    sharedSubscribers += 1;
+    startSharedConnection();
 
-    const applyStrikes = (next: LightningStrike[]) => {
-      strikeCache = next;
-      setStrikes(next);
-    };
-
-    const flushPending = () => {
-      if (!pendingRef.current.length) return;
-      const batch = pendingRef.current;
-      pendingRef.current = [];
-      applyStrikes(mergeStrikes(strikeCache, batch));
-    };
-
-    const flushTimer = setInterval(flushPending, FLUSH_MS);
-
-    const connectSocket = (host: string) => {
-      try {
-        const ws = new WebSocket(`wss://${host}.blitzortung.org/`);
-        ws.binaryType = "arraybuffer";
-
-        ws.onopen = () => {
-          try {
-            ws.send(JSON.stringify({ a: 111 }));
-          } catch {
-            /* ignore */
-          }
-        };
-
-        ws.onmessage = async (event) => {
-          const raw = await wsDataToString(event.data as string | Blob | ArrayBuffer);
-          if (!raw) return;
-          const parsed = parseStrikePayload(raw, idx);
-          if (parsed.length) pendingRef.current.push(...parsed);
-        };
-
-        ws.onerror = () => ws.close();
-        socketsRef.current.push(ws);
-      } catch {
-        /* ignore single host failure */
-      }
-    };
-
-    const connect = () => {
-      if (closed) return;
-      socketsRef.current.forEach((ws) => ws.close());
-      socketsRef.current = [];
-
-      for (const host of pickSocketHosts(3)) {
-        connectSocket(host);
-      }
-
-      if (keepaliveRef.current) clearInterval(keepaliveRef.current);
-      keepaliveRef.current = setInterval(() => {
-        for (const ws of socketsRef.current) {
-          if (ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.send(JSON.stringify({ a: 542 }));
-            } catch {
-              /* ignore */
-            }
-          }
-        }
-      }, KEEPALIVE_MS);
-    };
-
-    const scheduleReconnect = () => {
-      if (closed || reconnectRef.current) return;
-      reconnectRef.current = setTimeout(() => {
-        reconnectRef.current = null;
-        connect();
-      }, 3000);
-    };
-
-    const watchSockets = setInterval(() => {
-      if (closed) return;
-      const open = socketsRef.current.filter((ws) => ws.readyState === WebSocket.OPEN);
-      if (open.length === 0 && socketsRef.current.length > 0) {
-        scheduleReconnect();
-      }
-    }, 5000);
-
-    connect();
-    idxRef.current = idx.current;
-
-    // Show any strikes retained from a prior session immediately.
-    if (strikeCache.length) applyStrikes(strikeCache);
-
-    const cleanupTimer = setInterval(() => {
-      const now = Date.now();
-      applyStrikes(strikeCache.filter((s) => now - s.time < STRIKE_TTL));
-    }, 60_000);
+    const syncTimer = setInterval(() => {
+      if (enabledRef.current) setStrikes(strikeCache);
+    }, FLUSH_MS);
 
     return () => {
-      closed = true;
-      clearInterval(flushTimer);
-      clearInterval(cleanupTimer);
-      clearInterval(watchSockets);
-      if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      if (keepaliveRef.current) clearInterval(keepaliveRef.current);
-      flushPending();
-      socketsRef.current.forEach((ws) => ws.close());
-      socketsRef.current = [];
+      clearInterval(syncTimer);
+      sharedSubscribers -= 1;
+      if (sharedSubscribers <= 0) {
+        stopSharedConnection();
+      }
     };
-  }, [enabled]);
+  }, []);
 
   return strikes;
 }

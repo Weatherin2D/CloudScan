@@ -7,8 +7,8 @@
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
     "build:pages": "vite build --config vite.config.ts && node scripts/prepare-pages.mjs",
-    "start": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
+    "start": "node server.mjs",
+    "serve": "node server.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
@@ -51,6 +51,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
+    "@workspace/nexrad-browser": "workspace:*",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "cmdk": "^1.1.1",
@@ -79,7 +80,9 @@
   "dependencies": {
     "@types/leaflet": "^1.9.21",
     "buffer": "^6.0.3",
+    "express": "^5.2.1",
     "h5wasm": "^0.10.2",
+    "http-proxy-middleware": "^3.0.5",
     "leaflet": "^1.9.4",
     "nexrad-level-3-data": "^0.6.1",
     "react-leaflet": "^5.0.0",

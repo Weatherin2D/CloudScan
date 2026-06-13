@@ -6,11 +6,17 @@ import {
   type ReflectivityFadeSettings,
 } from "./palPalette";
 import type { Level3RadialLayer } from "./level3Parse";
+import {
+  sampleLevel3RadialInterp,
+  sampleOdimRadialInterp,
+} from "./polarSample";
 
 export interface PolarRenderResult {
   dataUrl: string;
   bounds: [[number, number], [number, number]];
 }
+
+export type GeographicPolarFrame = PolarRenderResult;
 
 const DEG = Math.PI / 180;
 
@@ -29,6 +35,168 @@ function destination(lat: number, lon: number, bearingDeg: number, distKm: numbe
       Math.cos(d) - Math.sin(lat1) * Math.sin(lat2),
     );
   return { lat: lat2 / DEG, lon: lon2 / DEG };
+}
+
+function level3GateBounds(
+  layer: Level3RadialLayer,
+  lat: number,
+  lon: number,
+): [[number, number], [number, number]] {
+  let minLat = lat;
+  let maxLat = lat;
+  let minLon = lon;
+  let maxLon = lon;
+
+  for (const radial of layer.radials) {
+    for (let b = 0; b < radial.bins.length; b++) {
+      if (radial.bins[b] == null) continue;
+      const rangeKm = (layer.firstBin + b) * layer.rangeScale;
+      const pos = destination(lat, lon, radial.startAngle, rangeKm);
+      minLat = Math.min(minLat, pos.lat);
+      maxLat = Math.max(maxLat, pos.lat);
+      minLon = Math.min(minLon, pos.lon);
+      maxLon = Math.max(maxLon, pos.lon);
+    }
+  }
+
+  const pad = 0.08;
+  return [
+    [minLat - pad, minLon - pad],
+    [maxLat + pad, maxLon + pad],
+  ];
+}
+
+function odimGateBounds(scan: OdimScanMeta): [[number, number], [number, number]] {
+  const { lat, lon, nbins, nrays, rstart, rscale, a1gate, values, nodata, undetect } = scan;
+  const azStep = nrays > 0 ? 360 / nrays : 1;
+  let minLat = lat;
+  let maxLat = lat;
+  let minLon = lon;
+  let maxLon = lon;
+
+  for (let ray = 0; ray < nrays; ray++) {
+    const az = (a1gate + ray * azStep) % 360;
+    for (let bin = 0; bin < nbins; bin++) {
+      const raw = values[ray * nbins + bin];
+      if (raw === nodata || raw === undetect || Number.isNaN(raw)) continue;
+      const rangeKm = (rstart + bin * rscale) / 1000;
+      const pos = destination(lat, lon, az, rangeKm);
+      minLat = Math.min(minLat, pos.lat);
+      maxLat = Math.max(maxLat, pos.lat);
+      minLon = Math.min(minLon, pos.lon);
+      maxLon = Math.max(maxLon, pos.lon);
+    }
+  }
+
+  const pad = 0.08;
+  return [
+    [minLat - pad, minLon - pad],
+    [maxLat + pad, maxLon + pad],
+  ];
+}
+
+/** Render Level-III to a lat/lon-aligned PNG suitable for Leaflet image overlays. */
+export function renderLevel3Geographic(
+  layer: Level3RadialLayer,
+  lat: number,
+  lon: number,
+  stops: ColorStop[],
+  maxSize = 1024,
+  reflectivity = false,
+  fade: ReflectivityFadeSettings = DEFAULT_REFLECTIVITY_FADE,
+): PolarRenderResult {
+  const sampleColor = reflectivity
+    ? (value: number, s: ColorStop[]) => colorAtReflectivityDbz(value, s, fade)
+    : colorAtDbz;
+
+  const bounds = level3GateBounds(layer, lat, lon);
+  const [[south, west], [north, east]] = bounds;
+  const latSpan = Math.max(0.01, north - south);
+  const lonSpan = Math.max(0.01, east - west);
+  const cosLat = Math.max(0.2, Math.cos(lat * DEG));
+  const width = maxSize;
+  const height = Math.max(256, Math.round((width * latSpan) / (lonSpan * cosLat)));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { dataUrl: "", bounds };
+
+  const imageData = ctx.createImageData(width, height);
+  const d = imageData.data;
+
+  for (let py = 0; py < height; py++) {
+    const gateLat = north - (py / Math.max(1, height - 1)) * latSpan;
+    for (let px = 0; px < width; px++) {
+      const gateLon = west + (px / Math.max(1, width - 1)) * lonSpan;
+      const val = sampleLevel3RadialInterp(layer, lat, lon, gateLat, gateLon);
+      const i = (py * width + px) * 4;
+      if (val == null) {
+        d[i + 3] = 0;
+        continue;
+      }
+      const [r, g, b, a] = sampleColor(val, stops);
+      d[i] = r;
+      d[i + 1] = g;
+      d[i + 2] = b;
+      d[i + 3] = a;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return { dataUrl: canvas.toDataURL("image/png"), bounds };
+}
+
+/** Render ODIM SCAN to a lat/lon-aligned PNG suitable for Leaflet image overlays. */
+export function renderOdimGeographic(
+  scan: OdimScanMeta,
+  stops: ColorStop[],
+  maxSize = 1024,
+  reflectivity = true,
+  fade: ReflectivityFadeSettings = DEFAULT_REFLECTIVITY_FADE,
+): PolarRenderResult {
+  const sampleColor = reflectivity
+    ? (value: number, s: ColorStop[]) => colorAtReflectivityDbz(value, s, fade)
+    : colorAtDbz;
+
+  const bounds = odimGateBounds(scan);
+  const [[south, west], [north, east]] = bounds;
+  const latSpan = Math.max(0.01, north - south);
+  const lonSpan = Math.max(0.01, east - west);
+  const cosLat = Math.max(0.2, Math.cos(scan.lat * DEG));
+  const width = maxSize;
+  const height = Math.max(256, Math.round((width * latSpan) / (lonSpan * cosLat)));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { dataUrl: "", bounds };
+
+  const imageData = ctx.createImageData(width, height);
+  const d = imageData.data;
+
+  for (let py = 0; py < height; py++) {
+    const gateLat = north - (py / Math.max(1, height - 1)) * latSpan;
+    for (let px = 0; px < width; px++) {
+      const gateLon = west + (px / Math.max(1, width - 1)) * lonSpan;
+      const val = sampleOdimRadialInterp(scan, scan.lat, scan.lon, gateLat, gateLon);
+      const i = (py * width + px) * 4;
+      if (val == null) {
+        d[i + 3] = 0;
+        continue;
+      }
+      const [r, g, b, a] = sampleColor(val, stops);
+      d[i] = r;
+      d[i + 1] = g;
+      d[i + 2] = b;
+      d[i + 3] = a;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return { dataUrl: canvas.toDataURL("image/png"), bounds };
 }
 
 /** Render a Level-III radial layer to a transparent PNG data URL. */

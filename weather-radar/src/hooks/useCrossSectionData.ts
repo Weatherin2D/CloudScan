@@ -5,6 +5,7 @@ import {
   type LatLng,
 } from "@/lib/crossSection";
 import { fetchRhiCrossSection } from "@/lib/rhiCrossSection";
+import { resolveCrossSectionDataSource } from "@/lib/radarTilt";
 import type { CrossSectionResult } from "@/components/CrossSectionPanel";
 import type { RadarStation } from "@/data/stations";
 
@@ -22,6 +23,7 @@ export interface CrossSectionRequest {
     dataSource?: "iem" | "level3" | "opera" | null;
     frameTime?: number;
     iemTmsId?: string;
+    level3FrameKey?: string;
   };
 }
 
@@ -64,9 +66,14 @@ export function useCrossSectionData(request: CrossSectionRequest) {
             end,
             station: radar.station,
             productId: radar.productId,
-            dataSource: radar.dataSource,
+            dataSource:
+              resolveCrossSectionDataSource(
+                radar.productId ?? "N0Q",
+                radar.station.country,
+              ) ?? radar.dataSource,
             frameTime: radar.frameTime,
             iemTmsId: radar.iemTmsId,
+            level3FrameKey: radar.level3FrameKey,
           });
           if (!cancelled) setResult({ kind: "rhi", data });
         }
@@ -97,6 +104,7 @@ export function useCrossSectionData(request: CrossSectionRequest) {
     radar?.dataSource,
     radar?.frameTime,
     radar?.iemTmsId,
+    radar?.level3FrameKey,
   ]);
 
   return { result, loading, error };

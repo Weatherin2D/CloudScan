@@ -37,7 +37,8 @@ An interactive global weather radar viewer with NEXRAD/OPERA products, lightning
 
 - `weather-radar` package lives at root level; added explicitly to `pnpm-workspace.yaml` alongside `apps/*`, `artifacts/*`, `lib/*`
 - In dev, Vite proxies `/api/nexrad-l3`, `/api/meteogate`, `/api/openradar` to external S3/weather APIs to bypass CORS
-- Production static build deploys from `weather-radar/dist/public`
+- Production on Replit uses `weather-radar/server.mjs` (Express + static files + same API proxies); build with `VITE_USE_API_PROXY=true`
+- GitHub Pages static build deploys from `weather-radar/dist/public` (no API proxy — some sources may block browser CORS)
 - `PORT=5000` must be set when running the dev server (vite reads `process.env.PORT`)
 - `allowedHosts: true` and `host: "0.0.0.0"` are already configured in `vite.config.ts` for Replit proxy compatibility
 

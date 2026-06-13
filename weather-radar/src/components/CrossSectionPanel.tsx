@@ -6,7 +6,7 @@ import {
 } from "@/lib/crossSection";
 import type { RhiCrossSectionData } from "@/lib/rhiCrossSection";
 import { valueToColor } from "@/lib/ecmwfModels";
-import { colorAtDbz, DEFAULT_PAL_STOPS } from "@/lib/palPalette";
+import { drawRhiCrossSection, rhiCellColor, DEFAULT_RHI_MAX_KFT } from "@/lib/rhiRender";
 
 export type CrossSectionResult =
   | { kind: "rhi"; data: RhiCrossSectionData }
@@ -19,12 +19,6 @@ interface Props {
   onClose: () => void;
 }
 
-function rhiCellColor(dbz: number | null): string {
-  if (dbz == null) return "#111827";
-  const [r, g, b] = colorAtDbz(dbz, DEFAULT_PAL_STOPS);
-  return `rgb(${r},${g},${b})`;
-}
-
 function ecmwfCellColor(data: CrossSectionData, val: number | null): string {
   if (val == null) return "#1f2937";
   const [r, g, b] = valueToColor("temperature", val, 255);
@@ -33,7 +27,6 @@ function ecmwfCellColor(data: CrossSectionData, val: number | null): string {
 
 function RhiChart({ data }: { data: RhiCrossSectionData }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const maxDist = data.lineLengthKm;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -41,72 +34,32 @@ function RhiChart({ data }: { data: RhiCrossSectionData }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const cols = data.distancesKm.length;
-    const rows = data.heightsKm.length;
-    if (cols === 0 || rows === 0) return;
-
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
+    if (w === 0 || h === 0) return;
+
     canvas.width = w * dpr;
     canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(0, 0, w, h);
-
-    const padL = 36;
-    const padR = 12;
-    const padT = 8;
-    const padB = 24;
-    const plotW = w - padL - padR;
-    const plotH = h - padT - padB;
-
-    const maxH = data.heightsKm[data.heightsKm.length - 1] ?? 16;
-
-    for (let hi = 0; hi < rows; hi++) {
-      for (let di = 0; di < cols; di++) {
-        const val = data.values[hi][di];
-        ctx.fillStyle = rhiCellColor(val);
-        const x = padL + (di / Math.max(1, cols - 1)) * plotW;
-        const yTop = padT + plotH - ((data.heightsKm[hi] / maxH) * plotH);
-        const cellW = plotW / cols + 1;
-        const cellH = plotH / rows + 1;
-        ctx.fillRect(x - cellW / 2, yTop - cellH / 2, cellW, cellH);
-      }
-    }
-
-    ctx.strokeStyle = "#374151";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(padL, padT);
-    ctx.lineTo(padL, padT + plotH);
-    ctx.lineTo(padL + plotW, padT + plotH);
-    ctx.stroke();
-
-    ctx.fillStyle = "#6b7280";
-    ctx.font = "10px system-ui, sans-serif";
-    ctx.textAlign = "right";
-    for (const tick of [0, 5, 10, 15]) {
-      if (tick > maxH) continue;
-      const y = padT + plotH - (tick / maxH) * plotH;
-      ctx.fillText(`${tick}`, padL - 4, y + 3);
-      ctx.strokeStyle = "#1f2937";
-      ctx.beginPath();
-      ctx.moveTo(padL, y);
-      ctx.lineTo(padL + plotW, y);
-      ctx.stroke();
-    }
-
-    ctx.textAlign = "center";
-    ctx.fillText("0 km", padL, padT + plotH + 16);
-    ctx.fillText(`${Math.round(maxDist)} km`, padL + plotW, padT + plotH + 16);
+    drawRhiCrossSection(ctx, data, {
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+    }, {
+      maxHeightKft: DEFAULT_RHI_MAX_KFT,
+      showGrid: true,
+      showLabels: true,
+      showFrame: true,
+    });
   }, [data]);
 
   return (
     <div className="space-y-2">
-      <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-gray-950">
-        <canvas ref={canvasRef} className="w-full h-48 sm:h-56" />
+      <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-black">
+        <canvas ref={canvasRef} className="w-full h-64 sm:h-80" />
         <div className="absolute right-2 top-2 flex flex-col gap-px text-[9px] font-mono">
           {[60, 50, 40, 30, 20, 10].map((dbz) => (
             <div key={dbz} className="flex items-center gap-1">
@@ -120,7 +73,7 @@ function RhiChart({ data }: { data: RhiCrossSectionData }) {
         </div>
       </div>
       <p className="text-[10px] text-gray-600">
-        Vertical reflectivity slice along your line · height (km) vs distance · built from radar tilts
+        Vertical reflectivity slice · height (kft) vs distance · {data.distancesKm.length} samples × {data.heightsKm.length} levels · {data.tiltRows.length} tilts
       </p>
     </div>
   );

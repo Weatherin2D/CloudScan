@@ -12,6 +12,7 @@ import { useStationRadarFrames } from "@/hooks/useStationRadarFrames";
 import { useLevel3RadarFrames } from "@/hooks/useLevel3RadarFrames";
 import { useOperaRadarFrames } from "@/hooks/useOperaRadarFrames";
 import StationRadarLayer from "@/components/StationRadarLayer";
+import SatelliteOverlayLayer from "@/components/SatelliteOverlayLayer";
 import MapFlyTo from "@/components/MapFlyTo";
 import MapViewSync, { type MapViewState } from "@/components/MapViewSync";
 import CrossSectionTool from "@/components/CrossSectionTool";
@@ -23,6 +24,7 @@ import {
   normalizeReflectivityFade,
   type ColorStop,
 } from "@/lib/colorScale";
+import type { SatelliteProductId, SatelliteTimelineFrame } from "@/lib/satelliteImagery";
 
 const Level3RadarLayer = lazy(() => import("@/components/Level3RadarLayer"));
 const OperaRadarLayer = lazy(() => import("@/components/OperaRadarLayer"));
@@ -54,6 +56,10 @@ export interface RadarMapPaneProps {
   reflectivityFadeStart: number;
   reflectivityFadeEnd: number;
   compact?: boolean;
+  satelliteOverlayEnabled?: boolean;
+  satelliteProduct?: SatelliteProductId;
+  satelliteFrames?: SatelliteTimelineFrame[];
+  satelliteFrameIndex?: number;
 }
 
 function paletteStopsForProduct(
@@ -89,6 +95,10 @@ export default function RadarMapPane({
   reflectivityFadeStart,
   reflectivityFadeEnd,
   compact = false,
+  satelliteOverlayEnabled = false,
+  satelliteProduct = "auto",
+  satelliteFrames = [],
+  satelliteFrameIndex = 0,
 }: RadarMapPaneProps) {
   const product = getRadarProduct(productId) ?? products[0];
   const dataSource = resolveStationDataSource(product.id, station.country, tiltIndex);
@@ -154,6 +164,15 @@ export default function RadarMapPane({
           worldCopyJump
         >
           <TileLayer url={TILE_URLS[mapType]} />
+          {satelliteOverlayEnabled && (
+            <SatelliteOverlayLayer
+              enabled
+              opacity={1}
+              product={satelliteProduct}
+              frames={satelliteFrames}
+              frameIndex={satelliteFrameIndex}
+            />
+          )}
           <MapViewSync
             view={mapView}
             onViewChange={onMapViewChange}

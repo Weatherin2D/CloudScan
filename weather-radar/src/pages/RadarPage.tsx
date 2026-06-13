@@ -55,6 +55,14 @@ import CrossSectionTool, { MapBoundsReporter } from "@/components/CrossSectionTo
 import CrossSectionPanel from "@/components/CrossSectionPanel";
 import RhiCurtainOverlay from "@/components/RhiCurtainOverlay";
 import RadarMapPane from "@/components/RadarMapPane";
+import MapScrollLimits from "@/components/MapScrollLimits";
+import { MAP_MAX_BOUNDS } from "@/lib/mapConfig";
+import {
+  clampFrameLimit,
+  DEFAULT_RADAR_FRAME_LIMIT,
+  MAX_RADAR_FRAME_LIMIT,
+  sliceRecentFrames,
+} from "@/lib/radarFrameLimits";
 import SatelliteOverlayLayer from "@/components/SatelliteOverlayLayer";
 import PixelProbeTool from "@/components/PixelProbeTool";
 import PixelProbePanel from "@/components/PixelProbePanel";
@@ -128,7 +136,8 @@ function MapViewportTracker({ onZoom }: { onZoom: (z: number) => void }) {
 // ─── Settings panel ───────────────────────────────────────────────────────────
 interface AppSettings {
   animSpeed: number;
-  frameLimit: number;
+  globalFrameLimit: number;
+  stationFrameLimit: number;
   colorScheme: number;   // -1 = custom canvas scale
   customStops: ColorStop[];
   /** dBZ where reflectivity opacity is 0%. */
@@ -146,15 +155,15 @@ interface AppSettings {
 }
 
 function SettingsPanel({
-  settings, onChange, onClose, maxFrames,
+  settings, onChange, onClose, maxGlobalFrames,
 }: {
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
   onClose: () => void;
-  maxFrames: number;
+  maxGlobalFrames: number;
 }) {
   const {
-    animSpeed, frameLimit, colorScheme, customStops = DEFAULT_CUSTOM_STOPS,
+    animSpeed, globalFrameLimit, stationFrameLimit, colorScheme, customStops = DEFAULT_CUSTOM_STOPS,
     reflectivityFadeStartDbz, reflectivityFadeEndDbz,
     lightningSize, lightningMaxAge,
     weatherRiskEnabled, weatherRiskDay, weatherRiskOpacity,
@@ -199,19 +208,47 @@ function SettingsPanel({
               </div>
             </div>
 
-            <div>
+            <div className="mb-4">
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm text-gray-300">Frame Count</label>
+                <label className="text-sm text-gray-300">Global Frame Count</label>
                 <span className="text-xs text-blue-400 font-mono">
-                  {Math.min(frameLimit, maxFrames || frameLimit)} / {maxFrames || "…"} frames
+                  {clampFrameLimit(globalFrameLimit, maxGlobalFrames)} / {maxGlobalFrames} frames
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 w-7">1</span>
-                <input type="range" min={1} max={maxFrames || 16} step={1} value={Math.min(frameLimit, maxFrames || frameLimit)}
-                  onChange={e => onChange({ frameLimit: Number(e.target.value) })}
-                  className="flex-1 accent-blue-500 h-1.5" />
-                <span className="text-xs text-gray-500 w-7">{maxFrames || 16}</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={maxGlobalFrames}
+                  step={1}
+                  value={clampFrameLimit(globalFrameLimit, maxGlobalFrames)}
+                  onChange={e => onChange({ globalFrameLimit: Number(e.target.value) })}
+                  className="flex-1 accent-blue-500 h-1.5"
+                />
+                <span className="text-xs text-gray-500 w-7">{maxGlobalFrames}</span>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm text-gray-300">Station Frame Count</label>
+                <span className="text-xs text-blue-400 font-mono">
+                  {clampFrameLimit(stationFrameLimit)} / {MAX_RADAR_FRAME_LIMIT} frames
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-7">1</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={MAX_RADAR_FRAME_LIMIT}
+                  step={1}
+                  value={clampFrameLimit(stationFrameLimit)}
+                  onChange={e => onChange({ stationFrameLimit: Number(e.target.value) })}
+                  className="flex-1 accent-blue-500 h-1.5"
+                />
+                <span className="text-xs text-gray-500 w-7">{MAX_RADAR_FRAME_LIMIT}</span>
               </div>
             </div>
           </section>
@@ -778,7 +815,8 @@ function paneCount(layout: SplitLayout): number {
 
 const DEFAULT_SETTINGS: AppSettings = {
   animSpeed: 600,
-  frameLimit: 999,
+  globalFrameLimit: DEFAULT_RADAR_FRAME_LIMIT,
+  stationFrameLimit: DEFAULT_RADAR_FRAME_LIMIT,
   colorScheme: -1,
   customStops: DEFAULT_CUSTOM_STOPS,
   reflectivityFadeStartDbz: 0,
@@ -911,16 +949,19 @@ export default function RadarPage() {
     stationForHooks,
     selectedProduct.id,
     selectedTilt,
+    settings.stationFrameLimit,
   );
   const { frames: level3Frames, loading: level3Loading } = useLevel3RadarFrames(
     stationForHooks,
     selectedProduct.id,
     selectedTilt,
+    settings.stationFrameLimit,
   );
   const { frames: operaFrames, loading: operaLoading, hasOpera } = useOperaRadarFrames(
     stationForHooks,
     selectedProduct.id,
     selectedTilt,
+    settings.stationFrameLimit,
   );
   const strikes = useLightning(lightningEnabled);
   const { outlook: weatherRiskOutlook, loading: weatherRiskLoading, error: weatherRiskError } =
@@ -1019,15 +1060,9 @@ export default function RadarPage() {
           path: f.path,
         }));
         const all = [...past, ...nowcast];
-        setFrames((prev) => {
+        setFrames(() => {
           if (initial) {
             setFrameIndex(past.length > 0 ? past.length - 1 : 0);
-            setSettings((s) => ({ ...s, frameLimit: all.length }));
-          } else if (prev.length > 0) {
-            setSettings((s) => ({
-              ...s,
-              frameLimit: s.frameLimit >= prev.length ? all.length : s.frameLimit,
-            }));
           }
           return all;
         });
@@ -1046,12 +1081,16 @@ export default function RadarPage() {
     };
   }, []);
 
-  // Derive display frames from frameLimit setting
-  const displayFrames = useMemo(() => {
-    if (!frames.length) return [];
-    const limit = Math.min(settings.frameLimit, frames.length);
-    return frames.slice(-limit);
-  }, [frames, settings.frameLimit]);
+  const maxGlobalFrames = useMemo(
+    () => Math.max(1, Math.min(MAX_RADAR_FRAME_LIMIT, frames.length || MAX_RADAR_FRAME_LIMIT)),
+    [frames.length],
+  );
+
+  // Derive display frames from globalFrameLimit setting
+  const displayFrames = useMemo(
+    () => sliceRecentFrames(frames, settings.globalFrameLimit),
+    [frames, settings.globalFrameLimit],
+  );
 
   const activeStationFrames = useMemo(() => {
     if (mode !== "station" || !selectedStation) return [];
@@ -1720,7 +1759,7 @@ export default function RadarPage() {
           settings={settings}
           onChange={patchSettings}
           onClose={() => setSettingsOpen(false)}
-          maxFrames={frames.length}
+          maxGlobalFrames={maxGlobalFrames}
         />
       )}
 
@@ -1994,6 +2033,7 @@ export default function RadarPage() {
                   satelliteProduct={settings.satelliteProduct}
                   satelliteFrames={timelineFrames}
                   satelliteFrameIndex={frameIndex}
+                  stationFrameLimit={settings.stationFrameLimit}
                 />
               ))}
             </div>
@@ -2001,9 +2041,11 @@ export default function RadarPage() {
 
           <MapContainer center={GLOBAL_CENTER} zoom={GLOBAL_ZOOM}
             style={{ width: "100%", height: "100%", display: splitViewActive ? "none" : "block" }}
-            zoomControl={true} attributionControl={false} worldCopyJump={true}>
+            zoomControl={true} attributionControl={false} worldCopyJump={false}
+            maxBounds={MAP_MAX_BOUNDS} maxBoundsViscosity={1.0}>
 
-            <TileLayer url={tileLayers[mapType]} />
+            <TileLayer url={tileLayers[mapType]} noWrap />
+            <MapScrollLimits />
             <MapViewportTracker onZoom={setMapZoom} />
 
             {showSatelliteOverlay && (

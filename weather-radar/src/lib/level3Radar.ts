@@ -1,5 +1,6 @@
 import { proxiedApiBase } from "./apiProxy";
 import { iemRidgeSector } from "./iemRadar";
+import { level3ListingHours } from "@/lib/radarFrameLimits";
 
 export const LEVEL3_S3_BASE = proxiedApiBase(
   "/api/nexrad-l3",
@@ -28,7 +29,7 @@ export function level3KeyToTime(key: string): number {
   );
 }
 
-function recentLevel3StartAfter(prefix: string, hoursBack = 1.5): string {
+function recentLevel3StartAfter(prefix: string, hoursBack: number): string {
   const d = new Date(Date.now() - hoursBack * 3_600_000);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${prefix}${d.getUTCFullYear()}_${pad(d.getUTCMonth() + 1)}_${pad(d.getUTCDate())}_${pad(d.getUTCHours())}_${pad(d.getUTCMinutes())}`;
@@ -43,7 +44,7 @@ export async function fetchLevel3Frames(
   const sector = level3Sector(stationId);
   const prefix = `${sector}_${productCode}_`;
   const keys: string[] = [];
-  let startAfter = recentLevel3StartAfter(prefix);
+  let startAfter = recentLevel3StartAfter(prefix, level3ListingHours(maxFrames));
 
   for (let page = 0; page < 2 && keys.length < maxFrames * 2; page++) {
     const url =

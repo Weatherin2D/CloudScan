@@ -8,6 +8,7 @@ export function useLevel3RadarFrames(
   station: RadarStation | null,
   productId: string,
   tiltIndex: number,
+  frameCount: number,
 ) {
   const [frames, setFrames] = useState<Level3Frame[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,7 +33,7 @@ export function useLevel3RadarFrames(
       }
 
       try {
-        const next = await fetchLevel3Frames(station.id, code);
+        const next = await fetchLevel3Frames(station.id, code, frameCount);
         if (!cancelled) setFrames(next);
       } catch {
         if (!cancelled && initial) setFrames([]);
@@ -47,7 +48,7 @@ export function useLevel3RadarFrames(
       cancelled = true;
       clearInterval(timer);
     };
-  }, [station?.id, station?.country, productId, tiltIndex]);
+  }, [station?.id, station?.country, productId, tiltIndex, frameCount]);
 
   return { frames, loading };
 }

@@ -9,6 +9,7 @@ export function useOperaRadarFrames(
   station: RadarStation | null,
   productId: string,
   tiltIndex: number,
+  frameCount: number,
 ) {
   const [frames, setFrames] = useState<OperaFrame[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,6 +43,7 @@ export function useOperaRadarFrames(
           station.id,
           product.fetchCode as "DBZH" | "VRADH",
           tilt,
+          frameCount,
         );
         if (!cancelled) setFrames(next);
       } catch {
@@ -57,7 +59,7 @@ export function useOperaRadarFrames(
       cancelled = true;
       clearInterval(timer);
     };
-  }, [station?.id, station?.country, productId, tiltIndex, hasOpera]);
+  }, [station?.id, station?.country, productId, tiltIndex, hasOpera, frameCount]);
 
   return { frames, loading, hasOpera };
 }

@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import type { RadarStation } from "@/data/stations";
 import {
-  STATION_RADAR_FRAME_COUNT,
   iemProductId,
   iemRidgeSector,
   iemScanIsoToTms,
   isIemProductSupported,
   type StationRadarFrame,
 } from "@/lib/iemRadar";
+import { iemListingMinutes, sliceRecentFrames } from "@/lib/radarFrameLimits";
 import { STATION_RADAR_REFRESH_MS } from "@/lib/radarRefresh";
 import { shouldUseIemFrames } from "@/lib/radarTilt";
 
@@ -21,6 +21,7 @@ export function useStationRadarFrames(
   station: RadarStation | null,
   uiProduct: string,
   tiltIndex: number,
+  frameCount: number,
 ) {
   const [frames, setFrames] = useState<StationRadarFrame[]>([]);
   const [loading, setLoading] = useState(false);
@@ -39,6 +40,7 @@ export function useStationRadarFrames(
     let cancelled = false;
     const sector = iemRidgeSector(station.id);
     const product = iemProductId(uiProduct);
+    const listingMinutes = iemListingMinutes(frameCount);
 
     const load = async (initial: boolean) => {
       if (initial) {
@@ -47,7 +49,7 @@ export function useStationRadarFrames(
       }
 
       const end = toIemIso(new Date());
-      const start = toIemIso(new Date(Date.now() - 90 * 60 * 1000));
+      const start = toIemIso(new Date(Date.now() - listingMinutes * 60 * 1000));
       const params = new URLSearchParams({
         operation: "list",
         radar: sector,
@@ -61,10 +63,13 @@ export function useStationRadarFrames(
         const json = await r.json();
         if (cancelled) return;
         const scans: { ts: string }[] = json.scans ?? [];
-        const recent = scans.slice(-STATION_RADAR_FRAME_COUNT).map((scan) => ({
-          time: Math.floor(new Date(scan.ts).getTime() / 1000),
-          tmsId: iemScanIsoToTms(scan.ts),
-        }));
+        const recent = sliceRecentFrames(
+          scans.map((scan) => ({
+            time: Math.floor(new Date(scan.ts).getTime() / 1000),
+            tmsId: iemScanIsoToTms(scan.ts),
+          })),
+          frameCount,
+        );
         setFrames(recent);
       } catch {
         if (!cancelled && initial) setFrames([]);
@@ -79,7 +84,7 @@ export function useStationRadarFrames(
       cancelled = true;
       clearInterval(timer);
     };
-  }, [station?.id, station?.country, uiProduct, tiltIndex]);
+  }, [station?.id, station?.country, uiProduct, tiltIndex, frameCount]);
 
   return { frames, loading };
 }

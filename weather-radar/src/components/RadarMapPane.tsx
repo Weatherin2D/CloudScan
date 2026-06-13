@@ -14,8 +14,10 @@ import { useOperaRadarFrames } from "@/hooks/useOperaRadarFrames";
 import StationRadarLayer from "@/components/StationRadarLayer";
 import SatelliteOverlayLayer from "@/components/SatelliteOverlayLayer";
 import MapFlyTo from "@/components/MapFlyTo";
+import MapScrollLimits from "@/components/MapScrollLimits";
 import MapViewSync, { type MapViewState } from "@/components/MapViewSync";
 import CrossSectionTool from "@/components/CrossSectionTool";
+import { MAP_MAX_BOUNDS } from "@/lib/mapConfig";
 import type { LatLng } from "@/lib/crossSection";
 import {
   stopsToIemIndexLUT,
@@ -60,6 +62,7 @@ export interface RadarMapPaneProps {
   satelliteProduct?: SatelliteProductId;
   satelliteFrames?: SatelliteTimelineFrame[];
   satelliteFrameIndex?: number;
+  stationFrameLimit: number;
 }
 
 function paletteStopsForProduct(
@@ -99,6 +102,7 @@ export default function RadarMapPane({
   satelliteProduct = "auto",
   satelliteFrames = [],
   satelliteFrameIndex = 0,
+  stationFrameLimit,
 }: RadarMapPaneProps) {
   const product = getRadarProduct(productId) ?? products[0];
   const dataSource = resolveStationDataSource(product.id, station.country, tiltIndex);
@@ -107,9 +111,20 @@ export default function RadarMapPane({
     station,
     product.id,
     tiltIndex,
+    stationFrameLimit,
   );
-  const { frames: level3Frames } = useLevel3RadarFrames(station, product.id, tiltIndex);
-  const { frames: operaFrames } = useOperaRadarFrames(station, product.id, tiltIndex);
+  const { frames: level3Frames } = useLevel3RadarFrames(
+    station,
+    product.id,
+    tiltIndex,
+    stationFrameLimit,
+  );
+  const { frames: operaFrames } = useOperaRadarFrames(
+    station,
+    product.id,
+    tiltIndex,
+    stationFrameLimit,
+  );
 
   const reflectivityFade = useMemo(
     () => normalizeReflectivityFade(reflectivityFadeStart, reflectivityFadeEnd),
@@ -161,9 +176,12 @@ export default function RadarMapPane({
           style={{ width: "100%", height: "100%" }}
           zoomControl={paneIndex === 0}
           attributionControl={false}
-          worldCopyJump
+          worldCopyJump={false}
+          maxBounds={MAP_MAX_BOUNDS}
+          maxBoundsViscosity={1.0}
         >
-          <TileLayer url={TILE_URLS[mapType]} />
+          <TileLayer url={TILE_URLS[mapType]} noWrap />
+          <MapScrollLimits />
           {satelliteOverlayEnabled && (
             <SatelliteOverlayLayer
               enabled

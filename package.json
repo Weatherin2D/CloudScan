@@ -2,6 +2,7 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "packageManager": "pnpm@10.12.4",
   "scripts": {
     "preinstall": "node scripts/preinstall.mjs",
     "dev": "pnpm --filter @workspace/weather-radar run dev",

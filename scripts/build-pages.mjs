@@ -21,7 +21,12 @@ console.log(`Building for GitHub Pages (BASE_PATH=${basePath})`);
 const build = spawnSync(
   "pnpm",
   ["--filter", "@workspace/weather-radar", "run", "build:pages"],
-  { cwd: root, stdio: "inherit", shell: true, env },
+  {
+    cwd: root,
+    stdio: "inherit",
+    env,
+    shell: process.platform === "win32",
+  },
 );
 
 process.exit(build.status ?? 1);

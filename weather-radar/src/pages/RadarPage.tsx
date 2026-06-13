@@ -63,6 +63,7 @@ import {
   MAX_GLOBAL_RADAR_FRAME_LIMIT,
   MAX_STATION_RADAR_FRAME_LIMIT,
   RADAR_LOOKBACK_HOURS,
+  sliceRecentGlobalFrames,
 } from "@/lib/radarFrameLimits";
 import SatelliteOverlayLayer from "@/components/SatelliteOverlayLayer";
 import PixelProbeTool from "@/components/PixelProbeTool";
@@ -946,8 +947,11 @@ export default function RadarPage() {
     [settings.customStops, reflectivityFade],
   );
 
-  const { frames: displayFrames, loading: globalFramesLoading } = useGlobalRadarFrames(
-    settings.globalFrameLimit,
+  const { frames: globalFrames, loading: globalFramesLoading } = useGlobalRadarFrames();
+
+  const displayFrames = useMemo(
+    () => sliceRecentGlobalFrames(globalFrames, settings.globalFrameLimit),
+    [globalFrames, settings.globalFrameLimit],
   );
 
   useEffect(() => {

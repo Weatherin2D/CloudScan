@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import {
-  GLOBAL_IEM_PRODUCT,
-  GLOBAL_IEM_RADAR,
-  type GlobalRadarFrame,
-} from "@/lib/globalRadar";
-import { iemRidgeTileUrl } from "@/lib/iemRadar";
+import type { GlobalRadarFrame } from "@/lib/globalRadar";
+import { iemUscompTileUrl } from "@/lib/iemRadar";
 import { CanvasTileLayerClass, type CanvasTileLayer } from "@/lib/canvasTileLayer";
 import { RAINVIEWER_TILE_OPTS, STATION_IEM_TILE_OPTS } from "@/lib/radarTiles";
 
@@ -111,7 +107,7 @@ export default function GlobalRadarLayer({
 
     neededIem.forEach((tmsId, key) => {
       if (iemPoolRef.current.has(key)) return;
-      const url = iemRidgeTileUrl(GLOBAL_IEM_RADAR, GLOBAL_IEM_PRODUCT, tmsId);
+      const url = iemUscompTileUrl(tmsId);
       const layer = isCustomScale && iemReflectivityLut
         ? new CanvasTileLayerClass(url, {
             ...STATION_IEM_TILE_OPTS,

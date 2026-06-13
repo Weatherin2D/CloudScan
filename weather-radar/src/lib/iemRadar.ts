@@ -45,6 +45,14 @@ export function iemScanIsoToTms(iso: string): string {
   return iso.replace(/[-:TZ]/g, "").slice(0, 12);
 }
 
+/** Nationwide mosaic uses N0Q in IEM list/TMS (not the site-level N0B alias). */
+export const IEM_USCOMP_RADAR = "USCOMP";
+export const IEM_USCOMP_PRODUCT = "N0Q";
+
+export function iemUscompTileUrl(tmsTimestamp = "0"): string {
+  return `${IEM_RIDGE_TMS}/ridge::${IEM_USCOMP_RADAR}-${IEM_USCOMP_PRODUCT}-${tmsTimestamp}/{z}/{x}/{y}.png`;
+}
+
 /** Build a Leaflet tile URL for a NEXRAD site, product, and optional scan time. */
 export function iemRidgeTileUrl(
   stationId: string,

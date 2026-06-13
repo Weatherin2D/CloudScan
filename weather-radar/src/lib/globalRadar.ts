@@ -1,15 +1,10 @@
-import {
-  globalListingHours,
-  sliceRecentGlobalFrames,
-} from "@/lib/radarFrameLimits";
-import { iemScanIsoToTms } from "@/lib/iemRadar";
+import { RADAR_LOOKBACK_HOURS } from "@/lib/radarFrameLimits";
+import { iemScanIsoToTms, IEM_USCOMP_PRODUCT, IEM_USCOMP_RADAR } from "@/lib/iemRadar";
 
 const LIST_URL = "https://mesonet.agron.iastate.edu/json/radar.py";
 const RAINVIEWER_URL = "https://api.rainviewer.com/public/weather-maps.json";
 
-/** IEM nationwide base-reflectivity composite used to extend global history. */
-export const GLOBAL_IEM_RADAR = "USCOMP";
-export const GLOBAL_IEM_PRODUCT = "N0B";
+export { IEM_USCOMP_RADAR as GLOBAL_IEM_RADAR, IEM_USCOMP_PRODUCT as GLOBAL_IEM_PRODUCT };
 
 export interface GlobalRadarFrame {
   time: number;
@@ -38,8 +33,8 @@ async function fetchIemCompositeScans(listingMinutes: number): Promise<{ ts: str
   const start = toIemIso(new Date(Date.now() - listingMinutes * 60 * 1000));
   const params = new URLSearchParams({
     operation: "list",
-    radar: GLOBAL_IEM_RADAR,
-    product: GLOBAL_IEM_PRODUCT,
+    radar: IEM_USCOMP_RADAR,
+    product: IEM_USCOMP_PRODUCT,
     start,
     end,
   });
@@ -66,10 +61,8 @@ function nearestRainViewerPath(
 }
 
 /** RainViewer for recent worldwide data + IEM US composite for up to 24 h of history. */
-export async function fetchGlobalRadarFrames(
-  frameCount: number,
-): Promise<GlobalRadarFrame[]> {
-  const listingMinutes = globalListingHours(frameCount) * 60;
+export async function fetchGlobalRadarFrames(): Promise<GlobalRadarFrame[]> {
+  const listingMinutes = RADAR_LOOKBACK_HOURS * 60;
   const [rainViewer, iemScans] = await Promise.all([
     fetchRainViewerPast(),
     fetchIemCompositeScans(listingMinutes),
@@ -96,6 +89,5 @@ export async function fetchGlobalRadarFrames(
     }
   }
 
-  const merged = [...byTime.values()].sort((a, b) => a.time - b.time);
-  return sliceRecentGlobalFrames(merged, frameCount);
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
 }

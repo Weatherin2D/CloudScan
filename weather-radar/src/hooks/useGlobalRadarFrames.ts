@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { fetchGlobalRadarFrames, type GlobalRadarFrame } from "@/lib/globalRadar";
 import { RAINVIEWER_REFRESH_MS } from "@/lib/radarRefresh";
 
-export function useGlobalRadarFrames(frameCount: number) {
+/** Loads the full global archive (24 h IEM US + RainViewer recent). Slice in the UI. */
+export function useGlobalRadarFrames() {
   const [frames, setFrames] = useState<GlobalRadarFrame[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -16,7 +17,7 @@ export function useGlobalRadarFrames(frameCount: number) {
       }
 
       try {
-        const next = await fetchGlobalRadarFrames(frameCount);
+        const next = await fetchGlobalRadarFrames();
         if (!cancelled) setFrames(next);
       } catch {
         if (!cancelled && initial) setFrames([]);
@@ -31,7 +32,7 @@ export function useGlobalRadarFrames(frameCount: number) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [frameCount]);
+  }, []);
 
   return { frames, loading };
 }
